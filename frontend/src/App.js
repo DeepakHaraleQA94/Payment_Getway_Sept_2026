@@ -22,6 +22,8 @@ import Checkout from "@/pages/Checkout";
 import Webhooks from "@/pages/Webhooks";
 import Reports from "@/pages/Reports";
 import CheckoutPage from "@/pages/CheckoutPage";
+import Security from "@/pages/Security";
+import { ForgotPassword, ResetPassword } from "@/pages/PasswordReset";
 
 function FullLoader() {
   return (
@@ -46,8 +48,11 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/checkout/:token" element={<CheckoutPage />} />
       <Route path="/dashboard" element={<Protected><Overview /></Protected>} />
+      <Route path="/dashboard/security" element={<Protected><Security /></Protected>} />
       <Route path="/dashboard/payments" element={<Protected><Payments /></Protected>} />
       <Route path="/dashboard/refunds" element={<Protected><Refunds /></Protected>} />
       <Route path="/dashboard/ledger" element={<Protected><Ledger /></Protected>} />

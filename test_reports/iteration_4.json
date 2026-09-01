@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 4 verified the auth-gap completion end-to-end. Backend: full pytest suite 50/50 passed serially (-n0), including all 9 new auth-security tests (expired-token rejection, session revoke, revoke-all/token_version bump, failed-login lockout, cross-tenant 403, MFA no-bypass, admin flagged mfa_enrollment_required, reset-token single-use + expiry). Additional targeted API checks: /api/auth/forgot-password always returns 200 with generic 'if an account exists' message for both existing and unknown emails and never leaks a token; /api/auth/change-password rejects wrong current with 400, succeeds with 200, returns a fresh access_token cookie, bumps token_version so the previous token becomes 401; /api/auth/login-history returns entries with success + reason (password, bad_credentials); admin /me returns permissions ['*'], mfa_enabled=false, mfa_enrollment_required=true. Frontend Playwright: Login page shows forgot-password-link; /forgot-password page renders with forgot-email-input + forgot-submit-button; admin login lands on /dashboard; nav-security opens /dashboard/security with setup-mfa-button, current-password-input, new-password-input, change-password-button, revoke-all-button and an Active Sessions table with the current session marked (current). Full MFA UI flow validated on a freshly registered user: setup via API returned a 32-char base32 secret, enable with TOTP code succeeded, subsequent UI login rendered mfa-code-input + mfa-verify-button (no session cookie yet), submitting the correct TOTP completed login and navigated to /dashboard. No critical or minor bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_auth_security.py",
+    "/app/test_reports/pytest/pytest_auth_security.xml",
+    "/app/test_reports/pytest/pytest_all.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth.forgot_password uses pydantic EmailStr which rejects reserved TLDs (.test/.example/.invalid) with a 422 before the account-existence branch — this only affects malformed emails and does not leak account existence, but if you want an absolute uniform response, catch validation errors or accept plain str.",
+    "change-password correctly bumps token_version so all prior tokens (including current) are invalidated; the endpoint issues a fresh access cookie so the caller keeps working — verified old bearer returns 401 immediately after.",
+    "sessions listing correctly flags the current session (is_current) and DELETE by id revokes only that session while revoke-all bumps token_version to invalidate every prior token — both paths verified in security suite and via UI.",
+    "MFA setup returns the base32 secret + otpauth URL; the secret is stored on the User row only after /enable with a valid TOTP — so a lost setup step doesn't half-enable MFA. Good.",
+    "PRE-EXISTING (not this iteration): pytest.ini defaults to xdist parallel and the webhook-lifecycle tests race on the shared acme tenant → FK error. Confirmed harmless via -n0 run passing 50/50. Suggest scoping webhook tests to unique tenants or a session-scoped tenant fixture.",
+    "MINOR: /api/auth/login-history has no explicit pagination limit visible in the payload — check for a LIMIT clause similar to other list endpoints."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (50/50 serial)", "frontend": "100% of tested flows (login, forgot, security, MFA enroll+enforce, sessions)"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md); MFA test users registered ad-hoc.",
+  "seed_data_creation": "Registered a handful of throw-away TEST users (ex_*, lh_*, mfaui_*, sec_*) for auth flows. No shared/admin state mutated (admin MFA left disabled as requested).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend suite with `cd /app/backend && set -a && . ./.env && set +a && python -m pytest tests/ -q -n0` to avoid the pre-existing webhook xdist race. Auth testids on Login: email-input, password-input, auth-submit-button, forgot-password-link, mfa-code-input, mfa-verify-button. Security page: nav-security, setup-mfa-button, mfa-setup-secret, mfa-enable-code-input, enable-mfa-button, disable-mfa-button, current-password-input, new-password-input, change-password-button, revoke-all-button, session rows with Revoke buttons. Forgot: forgot-email-input, forgot-submit-button. Reset: reset-password-input, reset-submit-button. Raw reset/verify tokens are never returned by the API — for reset-flow UI testing you must seed a hashed token directly in security_tokens table (see test_auth_security._insert_reset_token).",
+  "rca of the issue": "N/A — no bugs."
+}

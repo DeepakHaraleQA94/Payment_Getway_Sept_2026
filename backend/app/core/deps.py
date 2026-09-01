@@ -25,7 +25,23 @@ async def _user_from_jwt(token: str, db: AsyncSession) -> User | None:
         uid = uuid.UUID(payload["sub"])
     except (ValueError, KeyError):
         return None
-    return await db.get(User, uid)
+    user = await db.get(User, uid)
+    if user is None:
+        return None
+    # Global revocation via token_version.
+    if payload.get("tv") is not None and payload.get("tv") != user.token_version:
+        return None
+    # Per-session revocation: sid must map to a live, non-revoked AuthSession.
+    sid = payload.get("sid")
+    if sid:
+        res = await db.execute(select(AuthSession).where(AuthSession.session_token == sid))
+        sess = res.scalar_one_or_none()
+        if sess is None or sess.revoked_at is not None:
+            return None
+        exp = sess.expires_at.replace(tzinfo=timezone.utc) if sess.expires_at.tzinfo is None else sess.expires_at
+        if exp < datetime.now(timezone.utc):
+            return None
+    return user
 
 
 async def _user_from_session(token: str, db: AsyncSession) -> User | None:

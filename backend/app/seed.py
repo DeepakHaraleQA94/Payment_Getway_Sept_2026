@@ -69,13 +69,15 @@ async def seed(db: AsyncSession) -> None:
     if admin is None:
         admin = User(email=settings.admin_email, name="Platform Admin",
                      password_hash=hash_password(settings.admin_password), tenant_id=platform.id,
-                     role_id=super_role.id, is_superadmin=True, auth_provider="password", status="active")
+                     role_id=super_role.id, is_superadmin=True, auth_provider="password", status="active",
+                     email_verified=True)
         db.add(admin)
     else:
         if not admin.password_hash or not verify_password(settings.admin_password, admin.password_hash):
             admin.password_hash = hash_password(settings.admin_password)
         admin.is_superadmin = True
         admin.role_id = super_role.id
+        admin.email_verified = True
     await db.flush()
 
     # Demo tenant with sample config

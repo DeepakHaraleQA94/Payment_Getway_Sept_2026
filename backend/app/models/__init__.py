@@ -4,8 +4,10 @@ from app.models.tenant import Tenant  # noqa: F401
 from app.models.iam import (  # noqa: F401
     AuthSession,
     LoginAttempt,
+    LoginHistory,
     Permission,
     Role,
+    SecurityToken,
     User,
     role_permissions,
 )

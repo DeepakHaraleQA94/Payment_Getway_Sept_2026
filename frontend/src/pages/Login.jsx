@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ShieldCheck, Zap, Lock, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +17,8 @@ export default function Login() {
   const [password, setPassword] = useState("Admin@12345");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mfaToken, setMfaToken] = useState(null);
+  const [mfaCode, setMfaCode] = useState("");
 
   const submit = async (e) => {
     e.preventDefault();
@@ -25,9 +27,30 @@ export default function Login() {
       const path = mode === "login" ? "/auth/login" : "/auth/register";
       const payload = mode === "login" ? { email, password } : { email, password, name };
       const { data } = await api.post(path, payload);
+      if (data.mfa_required) {
+        setMfaToken(data.mfa_token);
+        toast.info("Enter your authenticator code");
+        return;
+      }
       setUser(data);
       await checkAuth();
       toast.success(`Welcome to CloudPay`);
+      navigate("/dashboard");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyMfa = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const { data } = await api.post("/auth/mfa/verify", { mfa_token: mfaToken, code: mfaCode });
+      setUser(data);
+      await checkAuth();
+      toast.success("Signed in");
       navigate("/dashboard");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);
@@ -97,24 +120,43 @@ export default function Login() {
           </p>
 
           <form onSubmit={submit} className="space-y-4" data-testid="auth-form">
-            {mode === "register" && (
+            {mfaToken && (
+              <div className="space-y-2" data-testid="mfa-challenge">
+                <Label htmlFor="mfa">Authenticator code</Label>
+                <Input id="mfa" data-testid="mfa-code-input" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} placeholder="123456" inputMode="numeric" />
+                <Button type="button" data-testid="mfa-verify-button" onClick={verifyMfa} disabled={loading} className="w-full font-medium">
+                  Verify & sign in
+                </Button>
+                <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
+              </div>
+            )}
+            {!mfaToken && mode === "register" && (
               <div className="space-y-2">
                 <Label htmlFor="name">Full name</Label>
                 <Input id="name" data-testid="name-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" />
               </div>
             )}
+            {!mfaToken && (
+            <>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" data-testid="email-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                {mode === "login" && (
+                  <Link to="/forgot-password" data-testid="forgot-password-link" className="text-xs text-primary hover:underline">Forgot password?</Link>
+                )}
+              </div>
               <Input id="password" data-testid="password-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             <Button type="submit" data-testid="auth-submit-button" disabled={loading} className="w-full font-medium">
               {loading ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            </>
+            )}
           </form>
 
           <div className="flex items-center gap-3 my-5">
