@@ -60,6 +60,8 @@ class Settings:
         # Secret store master key (Fernet). Encrypts provider credentials at rest.
         # Auto-generated + persisted by the secret store if absent (see services/secret_store.py).
         self.secret_store_key: str = os.environ.get("SECRET_STORE_KEY", "")
+        # Secret store backend selector. 'encrypted_db' now; 'aws_kms'/'vault'/etc. pluggable later.
+        self.secret_store_backend: str = os.environ.get("SECRET_STORE_BACKEND", "encrypted_db")
 
     @property
     def is_production(self) -> bool:

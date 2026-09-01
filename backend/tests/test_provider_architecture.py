@@ -90,12 +90,13 @@ def test_verify_webhook_returns_normalized_event():
 
 
 def test_registry_isolation_and_discovery():
-    # Only the built-in mock provider ships with the core.
+    # Built-in mock + the isolated example external PSP reference plugin. No real PSP SDK in core.
     assert registry.has_provider("mock")
+    assert registry.has_provider("examplepsp")
     assert not registry.has_provider("stripe")
     assert not registry.has_provider("razorpay")
     keys = {c["key"] for c in registry.list_providers()}
-    assert keys == {"mock"}, f"core must ship only the mock provider, got {keys}"
+    assert keys == {"mock", "examplepsp"}, f"unexpected registered providers: {keys}"
     # Unknown provider safely falls back to mock (never a live/unknown provider).
     assert registry.get_provider("nonexistent").key == "mock"
 
@@ -137,7 +138,8 @@ def test_discovery_endpoint_lists_only_mock(admin):
     r = admin.get("/api/providers/available")
     assert r.status_code == 200, r.text
     keys = {p["key"] for p in r.json()}
-    assert keys == {"mock"}, f"discovery must list only mock: {keys}"
+    assert keys == {"mock", "examplepsp"}, f"unexpected discovery keys: {keys}"
+    assert "stripe" not in keys and "razorpay" not in keys
 
 
 def test_capabilities_and_health_endpoints(admin):

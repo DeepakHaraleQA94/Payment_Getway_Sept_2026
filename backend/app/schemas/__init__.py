@@ -189,6 +189,7 @@ class PaymentOut(ORMBase):
     customer_email: str | None
     risk_score: int
     created_at: datetime
+    metadata: dict = Field(default={}, validation_alias="metadata_json", serialization_alias="metadata")
 
 
 class RefundCreate(BaseModel):

@@ -5,6 +5,7 @@ later as independent plugins by calling `register(MyProvider())` at import — n
 changes required. Only the Mock dev/test provider is built in.
 """
 from app.providers.base import PaymentProviderAdapter
+from app.providers.example_provider import ExampleExternalProvider
 from app.providers.mock import MockProvider
 
 _REGISTRY: dict[str, PaymentProviderAdapter] = {}
@@ -32,3 +33,6 @@ def list_providers() -> list[dict]:
 
 # Register built-in adapters. Only the Mock dev/test provider ships with the core.
 register(MockProvider())
+# Example external PSP: an ISOLATED reference plugin proving a real provider (with sandbox+live
+# and credential resolution) plugs in without any core change. No real PSP SDK is in the core.
+register(ExampleExternalProvider())

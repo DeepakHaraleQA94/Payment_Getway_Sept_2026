@@ -108,6 +108,9 @@ export default function Payments() {
                   <Select value={form.provider_key} onValueChange={(v) => setForm({ ...form, provider_key: v })}>
                     <SelectTrigger data-testid="payment-provider-select"><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="auto" data-testid="payment-provider-option-auto">
+                        Auto — priority routing &amp; failover
+                      </SelectItem>
                       {providers.map((p) => (
                         <SelectItem key={p.key} value={p.key} data-testid={`payment-provider-option-${p.key}`}>
                           {p.display_name} · {p.mode}

@@ -35,14 +35,16 @@ class ProviderFlowRequest(BaseModel):
     amount_minor: int
     currency: str = "USD"
     reference: str = "REF"
+    method: str = "card"                       # e.g. "card" or "upi"
     description: str | None = None
     customer_email: str | None = None
     metadata: dict = {}
 
     def to_charge_request(self) -> ChargeRequest:
+        meta = {**(self.metadata or {}), "method": self.method}
         return ChargeRequest(amount_minor=self.amount_minor, currency=self.currency,
                              reference=self.reference, description=self.description,
-                             customer_email=self.customer_email, metadata=self.metadata or {})
+                             customer_email=self.customer_email, metadata=meta)
 
 
 # ---- Feature flags ----

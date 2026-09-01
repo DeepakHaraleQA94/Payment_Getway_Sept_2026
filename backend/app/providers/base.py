@@ -121,21 +121,30 @@ class PaymentProviderAdapter(ABC):
         return {"status": status, "environment": env}
 
     # ---- standardized payment contract ----
+    # `config` (optional) carries the resolved per-account environment + credentials for this
+    # call. The core resolves it from the account's credential reference via the secret store and
+    # passes it in; plugins that need credentials read `config.options["credentials"]`. The Mock
+    # ignores it. This keeps the core provider-agnostic and secrets out of the provider records.
     @abstractmethod
-    def create_payment(self, req: ChargeRequest) -> ProviderResult:
+    def create_payment(self, req: ChargeRequest,
+                       config: "ProviderConfiguration | None" = None) -> ProviderResult:
         ...
 
     @abstractmethod
-    def refund(self, provider_txn_id: str, amount_minor: int, currency: str) -> ProviderResult:
+    def refund(self, provider_txn_id: str, amount_minor: int, currency: str,
+               config: "ProviderConfiguration | None" = None) -> ProviderResult:
         ...
 
-    def get_payment_status(self, provider_txn_id: str) -> ProviderStatusResult:
+    def get_payment_status(self, provider_txn_id: str,
+                           config: "ProviderConfiguration | None" = None) -> ProviderStatusResult:
         return ProviderStatusResult(provider_txn_id=provider_txn_id, normalized_status="unknown")
 
-    def generate_intent(self, req: ChargeRequest) -> ProviderIntent:
+    def generate_intent(self, req: ChargeRequest,
+                        config: "ProviderConfiguration | None" = None) -> ProviderIntent:
         raise ProviderError("unsupported_flow", "intent flow not supported by this provider")
 
-    def generate_qr(self, req: ChargeRequest) -> ProviderQR:
+    def generate_qr(self, req: ChargeRequest,
+                    config: "ProviderConfiguration | None" = None) -> ProviderQR:
         raise ProviderError("unsupported_flow", "qr flow not supported by this provider")
 
     def verify_callback(self, payload: bytes, headers: dict,
@@ -148,15 +157,17 @@ class PaymentProviderAdapter(ABC):
         """
         raise NotImplementedError("This provider does not implement inbound callbacks")
 
-    def reconcile(self, provider_txn_id: str) -> ProviderReconciliation:
+    def reconcile(self, provider_txn_id: str,
+                  config: "ProviderConfiguration | None" = None) -> ProviderReconciliation:
         """Fetch the provider's source-of-truth status for reconciliation. Defaults to status."""
-        st = self.get_payment_status(provider_txn_id)
+        st = self.get_payment_status(provider_txn_id, config)
         return ProviderReconciliation(provider_txn_id=provider_txn_id,
                                       normalized_status=st.normalized_status, raw=st.raw)
 
     # ---- backward-compatible aliases (legacy names) ----
-    def charge(self, req: ChargeRequest) -> ProviderResult:
-        return self.create_payment(req)
+    def charge(self, req: ChargeRequest,
+               config: "ProviderConfiguration | None" = None) -> ProviderResult:
+        return self.create_payment(req, config)
 
     def verify_webhook(self, payload: bytes, headers: dict,
                        environment: str | None = None) -> ProviderWebhookEvent:

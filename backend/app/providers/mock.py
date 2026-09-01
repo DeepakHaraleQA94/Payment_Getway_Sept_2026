@@ -33,6 +33,35 @@ from app.providers.contracts import (
 # Sandbox decline rule shared by the building blocks: minor units ending in "13" decline.
 _DECLINE_UNIT = 13
 
+# ---- Simulated UPI lifecycle ----
+# UPI intent/QR scenario is chosen from the amount's last two minor-unit digits so tests can
+# drive every state deterministically. Each scenario maps to a UPI state + a CloudPay status.
+# These are SIMULATED transactions only (raw carries simulated=True); no real bank rails.
+_UPI_STATE_BY_CODE = {
+    "p": ("pending", "pending"),
+    "f": ("failed", "failed"),
+    "e": ("expired", "failed"),
+    "c": ("cancelled", "cancelled"),
+    "s": ("success", "succeeded"),
+}
+_UPI_SCENARIO_BY_UNIT = {11: "p", 22: "f", 33: "e", 44: "c"}
+
+
+def _is_upi(req: ChargeRequest) -> bool:
+    return (req.metadata or {}).get("method") == "upi" or req.currency.upper() == "INR"
+
+
+def _upi_scenario(amount_minor: int):
+    code = _UPI_SCENARIO_BY_UNIT.get(amount_minor % 100, "s")
+    upi_state, normalized = _UPI_STATE_BY_CODE[code]
+    return code, upi_state, normalized
+
+
+def _upi_link(req: ChargeRequest) -> str:
+    # Standard UPI deep-link; amount in major units. Contains no card credentials.
+    amt = f"{req.amount_minor / 100:.2f}"
+    return f"upi://pay?pa=cloudpay@mockbank&pn=CloudPay&am={amt}&cu=INR&tn={req.reference}"
+
 
 class _MockAuthentication(ProviderAuthentication):
     def prepare(self, config: ProviderConfiguration) -> dict:
@@ -156,7 +185,7 @@ class MockProvider(PaymentProviderAdapter):
         return self._health.check(self.configuration(env))
 
     # ---- standardized contract ----
-    def create_payment(self, req: ChargeRequest) -> ProviderResult:
+    def create_payment(self, req: ChargeRequest, config=None) -> ProviderResult:
         try:
             auth = self._auth.prepare(self.configuration())
             raw = self._client.request("POST", "/charges",
@@ -167,7 +196,7 @@ class MockProvider(PaymentProviderAdapter):
             return ProviderResult(success=False, provider_txn_id=None, status="failed",
                                   raw={"sandbox": True}, error=err.code)
 
-    def refund(self, provider_txn_id: str, amount_minor: int, currency: str) -> ProviderResult:
+    def refund(self, provider_txn_id: str, amount_minor: int, currency: str, config=None) -> ProviderResult:
         auth = self._auth.prepare(self.configuration())
         raw = self._client.request("POST", "/refunds",
                                    payload=self._req.to_refund(provider_txn_id, amount_minor, currency),
@@ -176,18 +205,38 @@ class MockProvider(PaymentProviderAdapter):
                               status=self._status.to_cloudpay_status(raw.get("status", "succeeded")),
                               raw={"sandbox": True, "original": provider_txn_id})
 
-    def get_payment_status(self, provider_txn_id: str) -> ProviderStatusResult:
+    def get_payment_status(self, provider_txn_id: str, config=None) -> ProviderStatusResult:
+        # Simulated UPI intents/QRs encode their lifecycle scenario in the id (mock_upi_<code>_...).
+        if provider_txn_id.startswith("mock_upi_"):
+            code = provider_txn_id.split("_")[2]
+            upi_state, normalized = _UPI_STATE_BY_CODE.get(code, ("success", "succeeded"))
+            return ProviderStatusResult(provider_txn_id=provider_txn_id, normalized_status=normalized,
+                                        raw={"simulated": True, "rail": "upi", "upi_state": upi_state})
         raw = self._client.request("GET", f"/status/{provider_txn_id}")
         return ProviderStatusResult(provider_txn_id=provider_txn_id,
                                     normalized_status=self._status.to_cloudpay_status(raw.get("status", "")),
                                     raw={"sandbox": True})
 
-    def generate_intent(self, req: ChargeRequest) -> ProviderIntent:
+    def generate_intent(self, req: ChargeRequest, config=None) -> ProviderIntent:
+        # UPI Intent (simulated): returns a UPI deep-link/collect intent, never card data.
+        if _is_upi(req):
+            code, upi_state, _ = _upi_scenario(req.amount_minor)
+            intent_id = f"mock_upi_{code}_{uuid.uuid4().hex[:16]}"
+            link = _upi_link(req)
+            return ProviderIntent(intent_id=intent_id, client_token=link,
+                                  raw={"simulated": True, "rail": "upi", "upi_state": upi_state,
+                                       "vpa": "cloudpay@mockbank"})
         raw = self._client.request("POST", "/intents", payload=self._req.to_intent(req))
         return ProviderIntent(intent_id=raw["id"], client_token=raw.get("client_token"),
                               raw={"sandbox": True, "status": raw.get("status")})
 
-    def generate_qr(self, req: ChargeRequest) -> ProviderQR:
+    def generate_qr(self, req: ChargeRequest, config=None) -> ProviderQR:
+        # UPI QR (simulated): scannable UPI payload string, never card data.
+        if _is_upi(req):
+            code, upi_state, _ = _upi_scenario(req.amount_minor)
+            qr_id = f"mock_upi_{code}_{uuid.uuid4().hex[:16]}"
+            return ProviderQR(qr_id=qr_id, qr_payload=_upi_link(req),
+                              raw={"simulated": True, "rail": "upi", "upi_state": upi_state})
         raw = self._client.request("POST", "/qr", payload=self._req.to_qr(req))
         return ProviderQR(qr_id=raw["id"], qr_payload=raw["qr_payload"], raw={"sandbox": True})
 
@@ -195,8 +244,8 @@ class MockProvider(PaymentProviderAdapter):
                         environment: str | None = None) -> ProviderWebhookEvent:
         return self._callback.verify_and_parse(payload, headers)
 
-    def reconcile(self, provider_txn_id: str) -> ProviderReconciliation:
-        st = self.get_payment_status(provider_txn_id)
+    def reconcile(self, provider_txn_id: str, config=None) -> ProviderReconciliation:
+        st = self.get_payment_status(provider_txn_id, config)
         return ProviderReconciliation(provider_txn_id=provider_txn_id,
                                       normalized_status=st.normalized_status,
-                                      matched=True, raw={"sandbox": True})
+                                      matched=True, raw=st.raw)

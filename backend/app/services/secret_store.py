@@ -81,12 +81,18 @@ class EncryptedDbSecretStore(SecretStore):
             await db.flush()
 
 
-# Default singleton store. Swap for a KMS/Vault-backed implementation without touching callers.
+# Default singleton store. Selected by config so an external KMS/Vault backend can be added
+# later WITHOUT changing callers or the payment/provider architecture.
 _store: SecretStore | None = None
 
 
 def get_secret_store() -> SecretStore:
     global _store
     if _store is None:
-        _store = EncryptedDbSecretStore()
+        backend = (settings.secret_store_backend or "encrypted_db").lower()
+        if backend == "encrypted_db":
+            _store = EncryptedDbSecretStore()
+        else:
+            # Extension point: 'aws_kms', 'vault', 'gcp_kms' etc. plug in here in a future phase.
+            raise ValueError(f"Unsupported SECRET_STORE_BACKEND '{backend}'")
     return _store

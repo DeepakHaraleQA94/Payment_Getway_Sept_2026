@@ -1,0 +1,41 @@
+{
+  "summary": "SRD phase (Routing & Failover + isolated example real-provider plugin + config-selectable secret-store + simulated UPI) verified end-to-end. Full backend pytest suite passes serially: 127 passed (-n0). Added /app/backend/tests/test_iter11_srd_public.py with 6 targeted assertions against the public preview URL: available providers list includes examplepsp with live+required_credentials, auto routing picks highest-priority mock, failover on amount ending in 13 succeeds via examplepsp (routing_attempts persisted to DB with 2 entries: mock declined -> examplepsp succeeded, verified directly in Postgres), auto+no-accounts tenant returns 400 'no healthy provider', examplepsp live account creation never leaks raw api_key/api_secret in create-response or list-response (credentials_ref stored instead), and UPI intent/qr/status endpoints return upi:// deep-links with lifecycle states pending/cancelled. Frontend verified against https://pay-gateway-core.preview.emergentagent.com: Payments dropdown exposes Auto option + mock + examplepsp; creating an Auto sandbox payment yields a payment-row-<ref>. Providers dialog for examplepsp shows Environment selector with both sandbox and live options and dynamically renders provider-credential-api_key/api_secret/webhook_secret inputs; saving results in a card showing ENV: LIVE and 'CREDENTIALS: set'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET/POST /api/payments", "issue": "PaymentOut Pydantic schema does not expose metadata_json (or a projected metadata field). routing_attempts is correctly persisted to payments.metadata_json in Postgres (verified: 2 entries, mock declined then examplepsp succeeded), but the SRD-claim 'metadata.routing_attempts has 2 entries' is not observable via any HTTP response. Suggest adding metadata: dict = {} to PaymentOut and returning payment.metadata_json for it."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Tenants selector", "issues": ["Topbar tenant list still accumulates TEST_/Isolated/route-*/empty-*/fov-* tenants from repeated iterations — visual noise only, not a functional bug."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_srd_public.py",
+    "/app/backend/tests/test_routing_and_upi.py",
+    "/app/test_reports/pytest/iter11_full.xml",
+    "/app/test_reports/pytest/iter11_public.xml"
+  ],
+  "action_items": [
+    "(Minor) Expose metadata (routing_attempts) on PaymentOut so clients can observe the failover trace via GET /api/payments/{id}. Alternatively, add a dedicated GET /api/payments/{id}/routing endpoint."
+  ],
+  "critical_code_review_comments": [
+    "payment_engine.create_payment writes routing_attempts to payment.metadata_json AFTER the row exists — that is fine, but the response schema currently drops this field. Consider projecting it (or the last attempt's error/provider) for support debuggability.",
+    "app/providers/example_provider.py cleanly isolates sandbox simulation (raw.simulated=true) and requires api_key+api_secret before returning success in live — good; grep confirms no stripe/razorpay/sdk imports leaked into core payment_engine/webhooks (test_provider_architecture::test_core_has_no_provider_specific_imports still passes).",
+    "app/services/secret_store.get_secret_store is correctly gated by settings.secret_store_backend; SECRET_STORE_BACKEND=encrypted_db active; raw secret never returned via GET /api/providers (verified in test_examplepsp_credentials_are_referenced_not_returned).",
+    "MockProvider UPI lifecycle mapping (amount%100 -> pending/failed/expired/cancelled/succeeded) matches SRD; deep-links always start upi://pay with no card metadata."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_srd_public.py (new)"
+  ],
+  "success_rate": {"backend": "100% (127/127 full suite + 6/6 new iter11 tests)", "frontend": "100% (all targeted SRD flows)"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345",
+  "seed_data_creation": "Created transient TEST_/route-/iter11-/empty-/creds-/fov- tenants via API + one UI 'TEST-AUTO-<ts>' auto-routed sandbox payment in the topbar-active 'Fov' tenant + one live 'Example External PSP (reference)' provider account with credentials_ref (priority 77) on the same tenant. All are TEST- prefixed or ephemeral.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run backend suite with -n0 (webhook xdist race): `cd /app/backend && set -a && . ./.env && set +a && python -m pytest tests/ -n0 -q`. Public URL: https://pay-gateway-core.preview.emergentagent.com. Frontend paths are under /dashboard/* (e.g. /dashboard/payments, /dashboard/providers) — NOT /payments. Verified test-ids: payments-page, new-payment-button, new-payment-dialog, payment-provider-select, payment-provider-option-{auto,mock,examplepsp}, payment-environment-select, payment-reference-input, payment-amount-input, submit-payment-button, payment-row-<ref>; providers-page, add-provider-button, add-provider-dialog, provider-select (options by role name), provider-environment-select, provider-environment-option-{sandbox,live}, provider-credential-{api_key,api_secret,webhook_secret}, provider-priority-input, submit-provider-button, provider-credentials-status-<id>, provider-toggle-<id>. Known API surface gap: PaymentOut lacks metadata (routing_attempts stored in DB payments.metadata_json but not surfaced via API).",
+  "rca of the issue": "No blocking bugs. The only observed gap: PaymentOut Pydantic schema in /app/backend/app/schemas/__init__.py (lines ~176-191) omits metadata_json. Reproduction: create a failover payment (POST /api/payments amount_minor=5013 provider_key=auto env=sandbox on a tenant with mock@10 + examplepsp@20). Result: HTTP 200 with provider_key=examplepsp but no metadata field. DB confirms {\"routing_attempts\": [{provider_key:mock, success:false, error:card_declined}, {provider_key:examplepsp, success:true}]}. Fix: add `metadata: dict = {}` to PaymentOut with a Pydantic alias/validator mapping from ORM attribute metadata_json, or expose via a new sub-route."
+}

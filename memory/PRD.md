@@ -175,6 +175,31 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Deferred (SRD order): real provider plugin declaring LIVE support (with its own building blocks
   + credential resolution from credential_ref), UPI Intent/QR real flows, routing/failover.
 
+## Routing/Failover + Real-Provider Plugin + Secret-Store Selector + Simulated UPI (2026-06)
+- Routing & Failover (`app/services/routing_engine.py`): `provider_key="auto"` on a payment tries
+  enabled + registered + environment-supported + HEALTHY accounts in priority order, failing over
+  to the next on failure. The chosen provider + a `routing_attempts` trace are recorded on the
+  payment (exposed via PaymentOut.metadata).
+- Isolated example real-provider plugin (`app/providers/example_provider.py`, key `examplepsp`):
+  declares BOTH sandbox and live, is composed of its own building blocks (auth/HTTP client/mappers/
+  callback/error/health), and resolves credentials at execution time from the account's credential
+  reference via the secret store (passed as `config`). Sandbox is SIMULATED (raw.simulated=true);
+  live requires resolved credentials or safely fails `missing_live_credentials`. No PSP SDK in core.
+- Credential threading: contract methods accept an optional `config: ProviderConfiguration`; the
+  engine resolves the secret in-memory for the dispatch (never persisted/logged) and passes it in.
+- Config-selectable secret store: `get_secret_store()` picks by `SECRET_STORE_BACKEND`
+  (encrypted_db active); AWS KMS/Vault/GCP KMS pluggable later with no core change.
+- Simulated UPI Intent/QR in Mock: `method="upi"` (or INR) yields `upi://pay` deep-links/QRs
+  (never card data) with a deterministic lifecycle (pending/failed/expired/cancelled/succeeded via
+  amount), clearly marked simulated. Exposed through the generic intent/qr/status endpoints.
+- Frontend: Payments provider dropdown adds "Auto — priority routing & failover" and lists
+  examplepsp; Providers dialog shows environment (incl. live for examplepsp) + dynamic credential
+  fields + enable/disable + credentials status.
+- Tests: 133 backend tests pass serially (`pytest tests/ -n0`); new test_routing_and_upi.py +
+  test_iter11_srd_public.py. Testing agent: 100% backend + frontend, no critical issues.
+- Deferred: a concrete real PSP (Stripe/Razorpay) implementing examplepsp's building blocks against
+  its API + live credentials; external KMS/Vault backend; real UPI bank-rail connectivity.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).
