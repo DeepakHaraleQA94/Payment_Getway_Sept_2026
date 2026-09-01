@@ -103,6 +103,34 @@ async def provider_health_board(tenant_id: str | None = None, db: AsyncSession =
     return await provider_health_svc.health_board(db, tid)
 
 
+@router.get("/providers/alerts/settings")
+async def get_alert_settings(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+                             user=Depends(get_current_user)):
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    return await alert_service.get_thresholds(db, tid)
+
+
+class AlertThresholdUpdate(BaseModel):
+    success_rate_threshold: float | None = None
+    min_sample: int | None = None
+
+
+@router.put("/providers/alerts/settings")
+async def update_alert_settings(body: AlertThresholdUpdate, tenant_id: str | None = None,
+                                db: AsyncSession = Depends(get_db),
+                                user=Depends(require_permission("provider.manage"))):
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    try:
+        return await alert_service.set_thresholds(
+            db, tid, success_rate_threshold=body.success_rate_threshold, min_sample=body.min_sample)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/providers/alerts")
 async def list_provider_alerts(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
                                user=Depends(get_current_user)):

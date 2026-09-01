@@ -18,25 +18,26 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@12345")
 
 # ----------------------------- threshold logic (unit) -----------------------------
 def test_evaluate_account_rules():
+    thr = {"success_rate_threshold": 0.5, "min_sample": 5}
     unhealthy = {"enabled": True, "health_status": "unsupported_environment",
                  "metrics": {"total": 0, "success_rate": None, "succeeded": 0}}
-    assert _evaluate_account(unhealthy)[:2] == (True, "critical")
+    assert _evaluate_account(unhealthy, thr)[:2] == (True, "critical")
 
     low_rate = {"enabled": True, "health_status": "up",
                 "metrics": {"total": 10, "success_rate": 0.2, "succeeded": 2}}
-    assert _evaluate_account(low_rate)[:2] == (True, "warning")
+    assert _evaluate_account(low_rate, thr)[:2] == (True, "warning")
 
     healthy = {"enabled": True, "health_status": "up",
                "metrics": {"total": 10, "success_rate": 0.9, "succeeded": 9}}
-    assert _evaluate_account(healthy)[0] is False
+    assert _evaluate_account(healthy, thr)[0] is False
 
     disabled = {"enabled": False, "health_status": "up",
                 "metrics": {"total": 10, "success_rate": 0.0, "succeeded": 0}}
-    assert _evaluate_account(disabled)[0] is False  # operator-disabled: not alerted
+    assert _evaluate_account(disabled, thr)[0] is False  # operator-disabled: not alerted
 
     low_sample = {"enabled": True, "health_status": "up",
                   "metrics": {"total": 2, "success_rate": 0.0, "succeeded": 0}}
-    assert _evaluate_account(low_sample)[0] is False  # below min sample
+    assert _evaluate_account(low_sample, thr)[0] is False  # below min sample
 
 
 # ----------------------------- HTTP -----------------------------
@@ -104,3 +105,20 @@ def test_alerts_endpoint_never_exposes_secrets(admin, alert_tenant):
     r = admin.get(f"/api/providers/alerts?tenant_id={alert_tenant}")
     assert r.status_code == 200
     assert "credentials_ref" not in r.text and "sec_" not in r.text
+
+
+def test_alert_settings_get_and_update(admin, alert_tenant):
+    # Defaults from env initially.
+    d = admin.get(f"/api/providers/alerts/settings?tenant_id={alert_tenant}").json()
+    assert d["success_rate_threshold"] == 0.5 and d["min_sample"] == 5
+    # Per-tenant override persists.
+    u = admin.put(f"/api/providers/alerts/settings?tenant_id={alert_tenant}",
+                  json={"success_rate_threshold": 0.8, "min_sample": 3})
+    assert u.status_code == 200 and u.json()["success_rate_threshold"] == 0.8 and u.json()["min_sample"] == 3
+    assert admin.get(f"/api/providers/alerts/settings?tenant_id={alert_tenant}").json()["min_sample"] == 3
+    # Validation.
+    assert admin.put(f"/api/providers/alerts/settings?tenant_id={alert_tenant}",
+                     json={"success_rate_threshold": 1.5}).status_code == 400
+    # Reset to defaults for other tests' determinism.
+    admin.put(f"/api/providers/alerts/settings?tenant_id={alert_tenant}",
+              json={"success_rate_threshold": 0.5, "min_sample": 5})

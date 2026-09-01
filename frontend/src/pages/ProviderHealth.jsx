@@ -3,6 +3,8 @@ import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff, Bel
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, EmptyState } from "@/components/common";
 
@@ -137,18 +139,37 @@ export default function ProviderHealth() {
   const [data, setData] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [checking, setChecking] = useState(false);
+  const [thresholds, setThresholds] = useState({ success_rate_threshold: 0.5, min_sample: 5 });
+  const [savingCfg, setSavingCfg] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
-    const [board, al] = await Promise.all([
+    const [board, al, cfg] = await Promise.all([
       api.get("/providers/health-board", { params: { tenant_id: selectedTenantId } }),
       api.get("/providers/alerts", { params: { tenant_id: selectedTenantId } }),
+      api.get("/providers/alerts/settings", { params: { tenant_id: selectedTenantId } }),
     ]);
     setData(board.data);
     setAlerts(al.data);
+    setThresholds(cfg.data);
   }, [selectedTenantId]);
 
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+
+  const saveThresholds = async () => {
+    setSavingCfg(true);
+    try {
+      const { data } = await api.put("/providers/alerts/settings", {
+        success_rate_threshold: Number(thresholds.success_rate_threshold),
+        min_sample: Number(thresholds.min_sample),
+      }, { params: { tenant_id: selectedTenantId } });
+      setThresholds(data);
+      toast.success("Alert thresholds saved");
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Save failed");
+    } finally { setSavingCfg(false); }
+  };
 
   const checkNow = async () => {
     setChecking(true);
@@ -178,6 +199,35 @@ export default function ProviderHealth() {
           </Button>
         }
       />
+
+      <Panel className="mb-6" data-testid="alert-thresholds-panel">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Success-rate threshold (%)</Label>
+            <Input
+              type="number" min="0" max="100" className="w-32"
+              data-testid="threshold-success-rate-input"
+              value={Math.round((thresholds.success_rate_threshold ?? 0) * 100)}
+              onChange={(e) => setThresholds({ ...thresholds, success_rate_threshold: (Number(e.target.value) || 0) / 100 })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Min sample (payments)</Label>
+            <Input
+              type="number" min="1" className="w-32"
+              data-testid="threshold-min-sample-input"
+              value={thresholds.min_sample ?? 5}
+              onChange={(e) => setThresholds({ ...thresholds, min_sample: Number(e.target.value) || 1 })}
+            />
+          </div>
+          <Button size="sm" onClick={saveThresholds} disabled={savingCfg} data-testid="threshold-save-button">
+            {savingCfg ? "Saving…" : "Save thresholds"}
+          </Button>
+          <p className="text-[11px] text-muted-foreground font-mono">
+            Alert when a provider drops below {Math.round((thresholds.success_rate_threshold ?? 0) * 100)}% success over ≥ {thresholds.min_sample} payments.
+          </p>
+        </div>
+      </Panel>
 
       {alerts.length > 0 && (
         <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4" data-testid="alerts-banner">

@@ -242,6 +242,13 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Tests: 139 backend tests pass serially; new test_provider_alerts.py (threshold rules, fire/
   dedupe/recover, no-secret-leak). Verified live in the UI on Acme (mock 46% -> warning alert).
 
+## UI fix — Provider Health stray JSX artifact (2026-06)
+- Fixed a stray `)}` text artifact rendering on the Provider Health page. It was an orphaned
+  conditional close: the active-alerts banner had lost its `{alerts.length > 0 && (` opening.
+  Restored the conditional so the banner shows only when alerts exist, removing the artifact.
+- Verified via screenshot on preview (tenant "Empty Co": clean render, no `)}`, banner hidden
+  when zero alerts). No unrelated functionality changed.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

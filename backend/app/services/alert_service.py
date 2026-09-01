@@ -12,12 +12,45 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.models.payment import PaymentProvider, ProviderAlert
+from app.models.tenant import Tenant
 from app.services import email_service, provider_health, webhook_service
 
 logger = logging.getLogger("cloudpay.alerts")
 
 
-def _evaluate_account(acc: dict) -> tuple[bool, str | None, str | None]:
+async def get_thresholds(db, tenant_id) -> dict:
+    """Per-tenant alert thresholds (stored in tenant.settings), falling back to env defaults."""
+    tenant = await db.get(Tenant, tenant_id)
+    cfg = (tenant.settings or {}).get("alerts", {}) if tenant else {}
+    return {
+        "success_rate_threshold": float(cfg.get("success_rate_threshold", settings.alert_success_rate_threshold)),
+        "min_sample": int(cfg.get("min_sample", settings.alert_min_sample)),
+    }
+
+
+async def set_thresholds(db, tenant_id, *, success_rate_threshold=None, min_sample=None) -> dict:
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None:
+        raise ValueError("tenant not found")
+    current = dict(tenant.settings or {})
+    alerts = dict(current.get("alerts", {}))
+    if success_rate_threshold is not None:
+        srt = float(success_rate_threshold)
+        if not 0 <= srt <= 1:
+            raise ValueError("success_rate_threshold must be between 0 and 1")
+        alerts["success_rate_threshold"] = srt
+    if min_sample is not None:
+        ms = int(min_sample)
+        if ms < 1:
+            raise ValueError("min_sample must be >= 1")
+        alerts["min_sample"] = ms
+    current["alerts"] = alerts
+    tenant.settings = current
+    await db.commit()
+    return await get_thresholds(db, tenant_id)
+
+
+def _evaluate_account(acc: dict, thresholds: dict) -> tuple[bool, str | None, str | None]:
     """Return (is_bad, severity, reason) for a health-board account entry."""
     if not acc["enabled"]:
         return False, None, None  # operator-disabled accounts are not alerted
@@ -25,10 +58,10 @@ def _evaluate_account(acc: dict) -> tuple[bool, str | None, str | None]:
         return True, "critical", f"health status is '{acc['health_status']}'"
     m = acc["metrics"]
     rate = m.get("success_rate")
-    if m.get("total", 0) >= settings.alert_min_sample and rate is not None \
-            and rate < settings.alert_success_rate_threshold:
+    if m.get("total", 0) >= thresholds["min_sample"] and rate is not None \
+            and rate < thresholds["success_rate_threshold"]:
         pct = round(rate * 100)
-        thr = round(settings.alert_success_rate_threshold * 100)
+        thr = round(thresholds["success_rate_threshold"] * 100)
         return True, "warning", f"success rate {pct}% below threshold {thr}% ({m['succeeded']}/{m['total']})"
     return False, None, None
 
@@ -51,6 +84,7 @@ async def _notify(db, tenant_id, acc, event: str, severity, reason):
 
 async def evaluate_tenant(db, tenant_id) -> dict:
     board = await provider_health.health_board(db, tenant_id)
+    thresholds = await get_thresholds(db, tenant_id)
     now = datetime.now(timezone.utc)
     existing = {str(r.provider_account_id): r for r in (await db.execute(
         select(ProviderAlert).where(ProviderAlert.tenant_id == tenant_id))).scalars().all()}
@@ -59,7 +93,7 @@ async def evaluate_tenant(db, tenant_id) -> dict:
     active: list[dict] = []
     for env in ("sandbox", "live"):
         for acc in board["environments"][env]["accounts"]:
-            bad, severity, reason = _evaluate_account(acc)
+            bad, severity, reason = _evaluate_account(acc, thresholds)
             row = existing.get(acc["id"])
             if row is None:
                 row = ProviderAlert(tenant_id=tenant_id, provider_account_id=acc["id"],
