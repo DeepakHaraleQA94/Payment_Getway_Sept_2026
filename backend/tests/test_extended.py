@@ -85,7 +85,7 @@ def test_feature_flags_list_and_toggle(admin_client, acme_id):
     for f in flags:
         if f["key"] in ("kyc_aml", "vda", "vda_settlement"):
             assert f["enabled"] is False
-    # Toggle refunds flag if exists
+    # Toggle refunds flag if exists, then restore it (avoid leaking feature state to other tests)
     refunds = next((f for f in flags if f["key"] == "refunds"), None)
     if refunds:
         new_val = not refunds["enabled"]
@@ -94,6 +94,11 @@ def test_feature_flags_list_and_toggle(admin_client, acme_id):
             json={"enabled": new_val},
         )
         assert r2.status_code in (200, 204), r2.text
+        # Restore original value so feature entitlement enforcement stays deterministic.
+        admin_client.patch(
+            f"/api/features/{refunds['id']}?tenant_id={acme_id}",
+            json={"enabled": refunds["enabled"]},
+        )
 
 
 # Users list + roles

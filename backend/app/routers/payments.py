@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_permission, resolve_tenant_id
+from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
 from app.models.payment import Payment, Refund
 from app.schemas import PaymentCreate, PaymentOut, RefundCreate, RefundOut
 from app.services import payment_engine
@@ -58,6 +58,8 @@ async def refund_payment(payment_id: uuid.UUID, body: RefundCreate, db: AsyncSes
     payment = res.scalar_one_or_none()
     if not payment or (not user.is_superadmin and payment.tenant_id != user.tenant_id):
         raise HTTPException(status_code=404, detail="Payment not found")
+    # Feature entitlement: refunds can be disabled per tenant (enforced server-side).
+    await require_feature(db, payment.tenant_id, "refunds")
     try:
         refund = await payment_engine.create_refund(
             db, tenant_id=payment.tenant_id, actor=user, payment=payment,

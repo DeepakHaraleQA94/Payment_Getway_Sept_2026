@@ -100,6 +100,24 @@ def require_permission(code: str):
     return _dep
 
 
+async def feature_enabled(db, tenant_id, key: str) -> bool:
+    """Feature entitlement check. Explicitly-disabled flags block the operation;
+    absence of a flag defaults to allowed (so tenants without the flag are unaffected)."""
+    from app.models.feature import FeatureFlag
+    res = await db.execute(
+        select(FeatureFlag).where(FeatureFlag.tenant_id == tenant_id, FeatureFlag.key == key)
+    )
+    flag = res.scalar_one_or_none()
+    if flag is None:
+        return True
+    return bool(flag.enabled)
+
+
+async def require_feature(db, tenant_id, key: str) -> None:
+    if not await feature_enabled(db, tenant_id, key):
+        raise HTTPException(status_code=403, detail=f"Feature '{key}' is disabled for this tenant")
+
+
 def resolve_tenant_id(user: User, requested_tenant_id: str | None) -> uuid.UUID | None:
     """Tenant isolation: non-superadmins are locked to their own tenant."""
     if user.is_superadmin:
