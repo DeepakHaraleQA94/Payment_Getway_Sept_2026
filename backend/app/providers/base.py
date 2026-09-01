@@ -16,6 +16,7 @@ class ChargeRequest:
     reference: str
     description: str | None = None
     customer_email: str | None = None
+    idempotency_key: str | None = None
     metadata: dict = field(default_factory=dict)
 
 

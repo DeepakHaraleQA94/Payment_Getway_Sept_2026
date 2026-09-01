@@ -34,5 +34,12 @@ def validate_transition(current: str, new: str) -> None:
         raise InvalidTransition(f"Invalid payment transition: {current} -> {new}")
 
 
+def can_transition(current: str, new: str) -> bool:
+    """Non-raising check: True if `current` -> `new` is allowed (or a no-op)."""
+    if current == new:
+        return True
+    return new in ALLOWED_TRANSITIONS.get(current, set())
+
+
 def is_refundable(status: str) -> bool:
     return status in REFUNDABLE

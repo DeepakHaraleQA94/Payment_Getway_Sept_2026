@@ -1,0 +1,29 @@
+{
+  "summary": "PROMPT 05 Stripe TEST/Sandbox adapter verified. Ran existing test_stripe_provider.py (11 tests) and added test_prompt05_regressions.py (9 tests) covering ledger absence on failed Stripe payments, mock provider regression (single credit), POST /api/providers live-mode rejection, provider discovery invariants, idempotency-before-dispatch, public Stripe webhook (unmatched + ignored event types), and auth/RBAC regression. Full backend suite: 95/95 passed serially.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_stripe_provider.py",
+    "/app/backend/tests/test_prompt05_regressions.py",
+    "/app/test_reports/pytest/prompt05_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "registry.py registers a single global StripeProvider instance at import — env changes require process restart (acceptable but worth noting).",
+    "webhooks.py /stripe uses can_transition then validate_transition — slight duplication; can_transition alone would suffice with try/except.",
+    "StripeProvider.charge silently swallows all exceptions with type(exc).__name__ — good for graceful degradation but consider logging exc details at debug level for troubleshooting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_prompt05_regressions.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345 (from request)",
+  "seed_data_creation": "Created TEST_ prefixed payments for stripe (failed) and mock (succeeded) against acme tenant; ledger entries persist but are correctly scoped.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend Stripe adapter fully wired in TEST mode. Run tests with `cd /app/backend && set -a && . ./.env && set +a && python -m pytest tests/ -n0 -q`. MUST use -n0 (webhook race in xdist). Placeholder sk_test_emergent key causes real Stripe calls to fail gracefully — this is expected. Ledger schema uses `ref_id`+`direction` (not payment_id/side).",
+  "rca of the issue": "N/A — no defects found."
+}

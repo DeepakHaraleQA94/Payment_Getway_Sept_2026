@@ -75,6 +75,25 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Infra: Emergent object storage client, email adapter interface, APScheduler background jobs.
 - Tests: 41 backend tests pass (added test_iteration3.py, 10 cases).
 
+## Implemented (2026-06, PROMPT 05 — Stripe TEST/Sandbox adapter)
+- Stripe onboarded as an ISOLATED provider adapter (`app/providers/stripe_provider.py`),
+  resolved via the registry by `provider_key` — never hard-coded into the payment engine.
+- Registered ONLY in TEST mode: a live key (`sk_live_`) is never registered, so real-money
+  charges can never be dispatched. Provider discovery + monitoring surface Stripe with
+  `mode=sandbox`, `test_mode=true`.
+- Idempotency lock claimed (payment row unique constraint on tenant_id+idempotency_key)
+  BEFORE dispatching the external charge; the same idempotency_key is forwarded to Stripe.
+- Inbound Stripe webhook `POST /api/webhooks/stripe` (public): verifies signature when
+  `STRIPE_WEBHOOK_SECRET` is set (skips + parses JSON otherwise), reconciles payment status
+  idempotently via the state machine (`payment_intent.succeeded/payment_failed/canceled`),
+  audited; never posts ledger (sync charge flow owns financial mutations).
+- Graceful degradation: with the env's placeholder `sk_test_` key, real Stripe calls fail
+  and the payment resolves to `failed` (no ledger credit) — safe by design.
+- Tests: 95 backend tests pass serially (`pytest tests/ -n0`); added test_stripe_provider.py
+  (11) + test_prompt05_regressions.py (9).
+- NOTE: `STRIPE_API_KEY` in `.env` is a placeholder ("sk_test_emergent"); replace with a real
+  Stripe TEST secret key to process actual sandbox charges. `STRIPE_WEBHOOK_SECRET` is empty.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

@@ -1,21 +1,34 @@
 """Webhook endpoints + delivery inspector."""
+import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_audit
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_permission, resolve_tenant_id
 from app.core.security import generate_token
 from app.models.commerce import WebhookDelivery, WebhookEndpoint
+from app.models.payment import Payment
+from app.providers.stripe_provider import StripeProvider
 from app.schemas import WebhookCreate, WebhookOut
-from app.services import webhook_service
+from app.services import payment_state, webhook_service
+
+logger = logging.getLogger("cloudpay.webhooks")
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 SUPPORTED_EVENTS = ["payment.succeeded", "payment.failed", "refund.succeeded", "refund.failed"]
+
+# Map Stripe event types to the internal payment status we reconcile to.
+_STRIPE_STATUS_MAP = {
+    "payment_intent.succeeded": "succeeded",
+    "payment_intent.payment_failed": "failed",
+    "payment_intent.canceled": "cancelled",
+}
 
 
 @router.get("/events")
@@ -103,3 +116,66 @@ async def replay_delivery(delivery_id: uuid.UUID, db: AsyncSession = Depends(get
                        changes={"event_id": str(original.event_id), "original_delivery_id": str(original.id)})
     await db.commit()
     return {"id": str(new_delivery.id), "event_id": str(new_delivery.event_id), "status": new_delivery.status}
+
+
+
+# ---- Inbound Stripe webhook (provider -> CloudPay) ----
+@router.post("/stripe")
+async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Receive Stripe events and reconcile payment status idempotently.
+
+    Public endpoint (no session auth). When STRIPE_WEBHOOK_SECRET is configured the
+    payload signature is verified; otherwise the raw JSON is parsed (verification is
+    skipped until a secret is provided). Never posts ledger entries here — the
+    synchronous charge flow owns financial mutations; this only reconciles status.
+    """
+    provider = StripeProvider()
+    if not provider.configured or provider.is_live:
+        raise HTTPException(status_code=503, detail="Stripe webhook unavailable")
+
+    payload = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+
+    if settings.stripe_webhook_secret:
+        try:
+            event = provider.verify_webhook(payload, sig)
+        except Exception as exc:
+            logger.warning("Stripe webhook signature verification failed: %s", type(exc).__name__)
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        import json
+        try:
+            event = json.loads(payload or b"{}")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid payload")
+
+    event_type = event.get("type", "")
+    obj = (event.get("data") or {}).get("object") or {}
+    intent_id = obj.get("id") if event_type.startswith("payment_intent.") else obj.get("payment_intent")
+
+    target = _STRIPE_STATUS_MAP.get(event_type)
+    if not target or not intent_id:
+        return {"received": True, "ignored": True}
+
+    res = await db.execute(select(Payment).where(Payment.provider_txn_id == intent_id,
+                                                 Payment.provider_key == "stripe"))
+    payment = res.scalar_one_or_none()
+    if not payment:
+        return {"received": True, "unmatched": True}
+
+    prev = payment.status
+    if prev == target:
+        return {"received": True, "already": target}
+    if not payment_state.can_transition(prev, target):
+        # Not a valid transition (e.g. already refunded) — acknowledge without change.
+        return {"received": True, "skipped": True}
+
+    payment_state.validate_transition(prev, target)
+    payment.status = target
+    await record_audit(db, action="payment.webhook_reconcile", resource_type="payment",
+                       resource_id=payment.id, tenant_id=payment.tenant_id, actor_id=None,
+                       actor_email="stripe:webhook",
+                       changes={"previous_state": prev, "new_state": target,
+                                "event_type": event_type, "correlation_id": str(payment.id)})
+    await db.commit()
+    return {"received": True, "reconciled": True, "status": target}

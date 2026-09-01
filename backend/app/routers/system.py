@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, resolve_tenant_id
 from app.models.platform import AuditLog
+from app.providers.registry import list_providers
 from app.services import ai_voice_service, kyc_service, monitoring_service, vda_service
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -27,13 +28,24 @@ async def health(db: AsyncSession = Depends(get_db)):
 @router.get("/monitoring/services")
 async def monitoring_services(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     db_status = await monitoring_service.db_health(db)
+    services = [
+        {"name": "API", "status": "up"},
+        {"name": "PostgreSQL", "status": db_status["status"], "latency_ms": db_status.get("latency_ms")},
+        {"name": "Payment Engine", "status": "up"},
+        {"name": "Provider: Mock Sandbox", "status": "up"},
+    ]
+    # Reflect registered external providers (Stripe test mode) when configured.
+    for cap in list_providers():
+        if cap["key"] == "mock":
+            continue
+        services.append({
+            "name": f"Provider: {cap['display_name']}",
+            "status": "up" if cap.get("configured") else "unconfigured",
+            "mode": cap.get("mode"),
+            "test_mode": cap.get("test_mode"),
+        })
     return {
-        "services": [
-            {"name": "API", "status": "up"},
-            {"name": "PostgreSQL", "status": db_status["status"], "latency_ms": db_status.get("latency_ms")},
-            {"name": "Payment Engine", "status": "up"},
-            {"name": "Provider: Mock Sandbox", "status": "up"},
-        ],
+        "services": services,
         "boundaries": {
             "kyc_aml": kyc_service.provider_status(),
             "vda": vda_service.boundary_status(),

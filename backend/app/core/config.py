@@ -52,6 +52,10 @@ class Settings:
         # Email adapter (provider-agnostic; noop until a provider is configured)
         self.email_provider: str = os.environ.get("EMAIL_PROVIDER", "noop").lower()
 
+        # Stripe (TEST/SANDBOX only). Never hard-coded; read from env, never returned/logged.
+        self.stripe_api_key: str = os.environ.get("STRIPE_API_KEY", "")
+        self.stripe_webhook_secret: str = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
         # Webhook retry policy (configurable)
         self.webhook_max_attempts: int = int(os.environ.get("WEBHOOK_MAX_ATTEMPTS", "8"))
         self.webhook_base_delay_sec: int = int(os.environ.get("WEBHOOK_BASE_DELAY_SEC", "30"))
