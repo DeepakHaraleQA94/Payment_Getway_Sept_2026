@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_audit
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_permission, resolve_tenant_id
+from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
 from app.models.feature import FeatureFlag
 from app.models.finance import FeeRule
 from app.models.payment import Payment, PaymentProvider
@@ -314,6 +314,7 @@ async def add_provider(body: ProviderCreate, tenant_id: str | None = None, db: A
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    await require_feature(db, tid, "providers", bypass=user.is_superadmin)
     # Environment-aware gating (LIVE is NOT permanently blocked): a provider can be configured
     # for an environment only if its plugin declares support for it. The Mock reference plugin
     # supports SANDBOX only, so LIVE stays safe today; an authorized real plugin declaring

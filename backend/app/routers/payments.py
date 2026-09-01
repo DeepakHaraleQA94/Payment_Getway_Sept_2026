@@ -61,7 +61,7 @@ async def refund_payment(payment_id: uuid.UUID, body: RefundCreate, db: AsyncSes
     if not payment or (not user.is_superadmin and payment.tenant_id != user.tenant_id):
         raise HTTPException(status_code=404, detail="Payment not found")
     # Feature entitlement: refunds can be disabled per tenant (enforced server-side).
-    await require_feature(db, payment.tenant_id, "refunds")
+    await require_feature(db, payment.tenant_id, "refunds", bypass=user.is_superadmin)
     try:
         refund = await payment_engine.create_refund(
             db, tenant_id=payment.tenant_id, actor=user, payment=payment,

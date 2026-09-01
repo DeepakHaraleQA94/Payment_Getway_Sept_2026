@@ -12,33 +12,36 @@ import { Button } from "@/components/ui/button";
 
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard, testid: "nav-overview" },
-  { to: "/dashboard/payments", label: "Payments", icon: CreditCard, testid: "nav-payments" },
-  { to: "/dashboard/refunds", label: "Refunds", icon: Undo2, testid: "nav-refunds" },
+  { to: "/dashboard/payments", label: "Payments", icon: CreditCard, testid: "nav-payments", perm: "payment.create" },
+  { to: "/dashboard/refunds", label: "Refunds", icon: Undo2, testid: "nav-refunds", feature: "refunds", perm: "refund.create" },
   { to: "/dashboard/ledger", label: "Balance & Ledger", icon: BookOpen, testid: "nav-ledger" },
   { to: "/dashboard/settlements", label: "Settlements", icon: Banknote, testid: "nav-settlements" },
-  { to: "/dashboard/checkout", label: "Hosted Checkout", icon: Link2, testid: "nav-checkout" },
-  { to: "/dashboard/api-keys", label: "API Keys", icon: KeyRound, testid: "nav-api-keys" },
-  { to: "/dashboard/webhooks", label: "Webhooks", icon: Webhook, testid: "nav-webhooks" },
-  { to: "/dashboard/reports", label: "Reports", icon: FileText, testid: "nav-reports" },
-  { to: "/dashboard/providers", label: "Providers", icon: Plug, testid: "nav-providers" },
+  { to: "/dashboard/checkout", label: "Hosted Checkout", icon: Link2, testid: "nav-checkout", feature: "checkout", perm: "checkout.manage" },
+  { to: "/dashboard/api-keys", label: "API Keys", icon: KeyRound, testid: "nav-api-keys", feature: "api_keys", perm: "apikey.manage" },
+  { to: "/dashboard/webhooks", label: "Webhooks", icon: Webhook, testid: "nav-webhooks", feature: "webhooks", perm: "webhook.manage" },
+  { to: "/dashboard/reports", label: "Reports", icon: FileText, testid: "nav-reports", feature: "reports", perm: "report.manage" },
+  { to: "/dashboard/providers", label: "Providers", icon: Plug, testid: "nav-providers", feature: "providers", perm: "provider.manage" },
   { to: "/dashboard/provider-health", label: "Provider Health", icon: HeartPulse, testid: "nav-provider-health" },
-  { to: "/dashboard/fees", label: "Fee Engine", icon: Percent, testid: "nav-fees" },
-  { to: "/dashboard/tenants", label: "Tenants", icon: Building2, testid: "nav-tenants" },
-  { to: "/dashboard/access", label: "Access Control", icon: Users, testid: "nav-access" },
+  { to: "/dashboard/fees", label: "Fee Engine", icon: Percent, testid: "nav-fees", perm: "fee.manage" },
+  { to: "/dashboard/tenants", label: "Tenants", icon: Building2, testid: "nav-tenants", perm: "tenant.manage" },
+  { to: "/dashboard/access", label: "Access Control", icon: Users, testid: "nav-access", perm: "user.manage" },
   { to: "/dashboard/security", label: "Security", icon: ShieldCheck, testid: "nav-security" },
-  { to: "/dashboard/features", label: "Feature Flags", icon: ToggleLeft, testid: "nav-features" },
-  { to: "/dashboard/audit", label: "Audit Log", icon: ScrollText, testid: "nav-audit" },
+  { to: "/dashboard/features", label: "Feature Flags", icon: ToggleLeft, testid: "nav-features", perm: "feature.manage" },
+  { to: "/dashboard/audit", label: "Audit Log", icon: ScrollText, testid: "nav-audit", perm: "audit.view" },
   { to: "/dashboard/monitoring", label: "Monitoring", icon: Activity, testid: "nav-monitoring" },
 ];
 
 export default function Layout({ children }) {
-  const { user, logout, tenants, selectedTenantId, setSelectedTenantId } = useAuth();
+  const { user, logout, tenants, selectedTenantId, setSelectedTenantId, hasPermission, featureEnabled } = useAuth();
   const navigate = useNavigate();
 
   const doLogout = async () => {
     await logout();
     navigate("/login");
   };
+
+  const nav = NAV.filter((item) =>
+    (!item.feature || featureEnabled(item.feature)) && (!item.perm || hasPermission(item.perm)));
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -50,7 +53,17 @@ export default function Layout({ children }) {
           <span className="font-heading text-lg font-bold tracking-tight">CloudPay</span>
         </div>
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {NAV.map((item) => (
+          {user?.is_superadmin && (
+            <NavLink
+              to="/superadmin"
+              data-testid="nav-superadmin-console"
+              className="flex items-center gap-3 px-3 py-2 mb-2 rounded-lg text-sm border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            >
+              <ShieldCheck className="h-[18px] w-[18px]" />
+              Super Admin Console
+            </NavLink>
+          )}
+          {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

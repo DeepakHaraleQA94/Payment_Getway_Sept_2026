@@ -25,6 +25,7 @@ import Reports from "@/pages/Reports";
 import CheckoutPage from "@/pages/CheckoutPage";
 import Security from "@/pages/Security";
 import { ForgotPassword, ResetPassword } from "@/pages/PasswordReset";
+import { SuperAdminGuard, SAOverview, SAAdmins, SATenants, SAFeatures, SARoles } from "@/pages/SuperAdmin";
 
 function FullLoader() {
   return (
@@ -52,6 +53,11 @@ function AppRouter() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/checkout/:token" element={<CheckoutPage />} />
+      <Route path="/superadmin" element={<SuperAdminGuard><SAOverview /></SuperAdminGuard>} />
+      <Route path="/superadmin/admins" element={<SuperAdminGuard><SAAdmins /></SuperAdminGuard>} />
+      <Route path="/superadmin/tenants" element={<SuperAdminGuard><SATenants /></SuperAdminGuard>} />
+      <Route path="/superadmin/features" element={<SuperAdminGuard><SAFeatures /></SuperAdminGuard>} />
+      <Route path="/superadmin/roles" element={<SuperAdminGuard><SARoles /></SuperAdminGuard>} />
       <Route path="/dashboard" element={<Protected><Overview /></Protected>} />
       <Route path="/dashboard/security" element={<Protected><Security /></Protected>} />
       <Route path="/dashboard/payments" element={<Protected><Payments /></Protected>} />

@@ -34,6 +34,47 @@ class UserOut(ORMBase):
     created_at: datetime
 
 
+# ---- Super Admin control plane ----
+class PlatformAdminCreate(BaseModel):
+    email: EmailStr
+    name: str = ""
+    password: str = Field(min_length=8, max_length=128)
+    role_id: uuid.UUID | None = None
+    permission_codes: list[str] | None = None  # exact permissions (no wildcard, never superadmin)
+
+
+class PlatformAdminUpdate(BaseModel):
+    name: str | None = None
+    status: str | None = None            # active | suspended
+    role_id: uuid.UUID | None = None
+    permission_codes: list[str] | None = None
+
+
+class PlatformAdminOut(ORMBase):
+    id: uuid.UUID
+    email: str
+    name: str
+    status: str
+    is_superadmin: bool
+    role_id: uuid.UUID | None = None
+    role_name: str | None = None
+    permissions: list[str] = []
+    last_login_at: datetime | None = None
+    created_at: datetime
+
+
+class SetPasswordBody(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+class TenantFeatureSet(BaseModel):
+    tenant_id: uuid.UUID
+    key: str
+    name: str | None = None
+    enabled: bool
+    description: str | None = None
+
+
 # ---- Tenant ----
 class TenantCreate(BaseModel):
     name: str = Field(max_length=200)

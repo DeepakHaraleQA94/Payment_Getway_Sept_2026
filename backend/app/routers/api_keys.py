@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_audit
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_permission, resolve_tenant_id
+from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
 from app.core.security import generate_api_key
 from app.models.commerce import ApiKey
 from app.schemas import ApiKeyCreate, ApiKeyOut
@@ -29,6 +29,7 @@ async def create_key(body: ApiKeyCreate, tenant_id: str | None = None, db: Async
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    await require_feature(db, tid, "api_keys", bypass=user.is_superadmin)
     plaintext, key_hash, last4 = generate_api_key("sk_test")
     key = ApiKey(tenant_id=tid, label=body.label, key_prefix="sk_test", key_hash=key_hash,
                  last4=last4, created_by=str(user.id))

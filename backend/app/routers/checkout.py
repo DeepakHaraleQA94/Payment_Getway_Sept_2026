@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, get_tenant_from_api_key, require_permission, resolve_tenant_id
+from app.core.deps import get_current_user, get_tenant_from_api_key, require_feature, require_permission, resolve_tenant_id
 from app.core.ratelimit import rate_limit
 from app.core.security import generate_token
 from app.models.commerce import CheckoutSession
@@ -54,6 +54,7 @@ async def create_session(body: CheckoutCreate, tenant_id: str | None = None,
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    await require_feature(db, tid, "checkout", bypass=user.is_superadmin)
     session = await _create_session(db, tenant_id=tid, body=body, actor_id=user.id)
     await db.commit()
     await db.refresh(session)

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_permission, resolve_tenant_id
+from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
 from app.core.storage import get_object
 from app.models.commerce import ScheduledReport, StoredFile
 from app.models.tenant import Tenant
@@ -40,6 +40,7 @@ async def run_now(tenant_id: str | None = None, report_type: str = "daily",
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    await require_feature(db, tid, "reports", bypass=user.is_superadmin)
     if report_type not in report_generation.VALID_TYPES:
         raise HTTPException(status_code=400, detail="report_type must be daily, weekly, monthly or custom")
     tenant = await db.get(Tenant, tid)

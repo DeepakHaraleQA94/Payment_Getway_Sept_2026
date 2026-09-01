@@ -35,7 +35,7 @@ export default function Login() {
       setUser(data);
       await checkAuth();
       toast.success(`Welcome to CloudPay`);
-      navigate("/dashboard");
+      navigate(data.is_superadmin ? "/superadmin" : "/dashboard");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);
     } finally {
@@ -51,7 +51,7 @@ export default function Login() {
       setUser(data);
       await checkAuth();
       toast.success("Signed in");
-      navigate("/dashboard");
+      navigate(data.is_superadmin ? "/superadmin" : "/dashboard");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);
     } finally {

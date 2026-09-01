@@ -80,6 +80,28 @@ async def seed(db: AsyncSession) -> None:
         admin.email_verified = True
     await db.flush()
 
+    # Platform "Operations" role (limited, explicit permissions) for Level-2 Platform Admins
+    res = await db.execute(select(Role).where(Role.name == "Platform Operations", Role.tenant_id.is_(None)))
+    ops_role = res.scalar_one_or_none()
+    ops_perms_codes = {"tenant.manage", "audit.view", "report.manage"}
+    ops_perms = [p for p in all_perms if p.code in ops_perms_codes]
+    if ops_role is None:
+        ops_role = Role(name="Platform Operations", description="Limited platform admin (tenants, audit, reports)",
+                        is_system=False, tenant_id=None, permissions=ops_perms)
+        db.add(ops_role)
+        await db.flush()
+
+    # Demo Platform Admin (Level 2): on platform tenant, NOT a super admin, only granted perms.
+    res = await db.execute(select(User).where(User.email == "ops-admin@cloudpay.io"))
+    ops_admin = res.scalar_one_or_none()
+    if ops_admin is None:
+        ops_admin = User(email="ops-admin@cloudpay.io", name="Ops Admin",
+                         password_hash=hash_password(settings.admin_password), tenant_id=platform.id,
+                         role_id=ops_role.id, is_superadmin=False, auth_provider="password",
+                         status="active", email_verified=True)
+        db.add(ops_admin)
+        await db.flush()
+
     # Demo tenant with sample config
     res = await db.execute(select(Tenant).where(Tenant.slug == "acme"))
     demo = res.scalar_one_or_none()
@@ -95,6 +117,11 @@ async def seed(db: AsyncSession) -> None:
                        percent_bps=290, fixed_minor=30, min_fee_minor=0, active=True, priority=10))
         db.add(FeatureFlag(tenant_id=demo.id, key="refunds", name="Refunds", enabled=True,
                            description="Allow refunds for this tenant"))
+        # Core customer-facing features, enabled by default (Super Admin can toggle per tenant).
+        for key, name in (("checkout", "Checkout"), ("reports", "Reports"), ("webhooks", "Webhooks"),
+                          ("api_keys", "API Keys"), ("providers", "Providers")):
+            db.add(FeatureFlag(tenant_id=demo.id, key=key, name=name, enabled=True,
+                               description=f"{name} capability for this tenant"))
         db.add(FeatureFlag(tenant_id=demo.id, key="kyc_aml", name="KYC / AML", enabled=False,
                            description="Regulated capability, disabled until provider configured"))
         db.add(FeatureFlag(tenant_id=demo.id, key="vda_settlement", name="VDA Settlement", enabled=False,

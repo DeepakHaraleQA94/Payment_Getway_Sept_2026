@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_audit
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_permission, resolve_tenant_id
+from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
 from app.core.security import generate_token
 from app.models.commerce import WebhookDelivery, WebhookEndpoint
 from app.schemas import WebhookCreate, WebhookOut
@@ -45,6 +45,7 @@ async def create_endpoint(body: WebhookCreate, tenant_id: str | None = None,
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    await require_feature(db, tid, "webhooks", bypass=user.is_superadmin)
     ep = WebhookEndpoint(tenant_id=tid, url=body.url, description=body.description,
                          events=body.events, secret=f"whsec_{generate_token(16)}",
                          enabled=True, created_by=str(user.id))

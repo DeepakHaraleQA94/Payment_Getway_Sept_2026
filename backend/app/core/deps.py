@@ -113,9 +113,19 @@ async def feature_enabled(db, tenant_id, key: str) -> bool:
     return bool(flag.enabled)
 
 
-async def require_feature(db, tenant_id, key: str) -> None:
+async def require_feature(db, tenant_id, key: str, *, bypass: bool = False) -> None:
+    # Super Admin (bypass=True) is never blocked by a tenant's feature restriction.
+    if bypass:
+        return
     if not await feature_enabled(db, tenant_id, key):
         raise HTTPException(status_code=403, detail=f"Feature '{key}' is disabled for this tenant")
+
+
+async def require_superadmin(user: User = Depends(get_current_user)) -> User:
+    """Level-1 guard: only platform Super Admins may access the /superadmin control plane."""
+    if not user.is_superadmin:
+        raise HTTPException(status_code=403, detail="Super Admin access required")
+    return user
 
 
 def resolve_tenant_id(user: User, requested_tenant_id: str | None) -> uuid.UUID | None:

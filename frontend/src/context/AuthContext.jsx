@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null); // null=checking, false=anon, object=authed
   const [tenants, setTenants] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState(null);
+  const [features, setFeatures] = useState({}); // { key: enabled } for selected tenant
 
   const loadTenants = useCallback(async () => {
     try {
@@ -30,27 +31,42 @@ export function AuthProvider({ children }) {
   }, [loadTenants]);
 
   useEffect(() => {
-    // If returning from Google OAuth callback, let AuthCallback handle it.
-    if (window.location.hash?.includes("session_id=")) {
-      return;
-    }
+    if (window.location.hash?.includes("session_id=")) return;
     checkAuth();
   }, [checkAuth]);
 
+  // Load the selected tenant's feature entitlements so the UI can hide disabled features.
+  useEffect(() => {
+    if (!user || !selectedTenantId) { setFeatures({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/features", { params: { tenant_id: selectedTenantId } });
+        if (!cancelled) setFeatures(Object.fromEntries(data.map((f) => [f.key, f.enabled])));
+      } catch {
+        if (!cancelled) setFeatures({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, selectedTenantId]);
+
   const logout = async () => {
-    try {
-      await api.post("/auth/logout");
-    } catch {
-      /* ignore */
-    }
+    try { await api.post("/auth/logout"); } catch { /* ignore */ }
     setUser(false);
     setTenants([]);
     setSelectedTenantId(null);
+    setFeatures({});
   };
+
+  const permissions = new Set(user?.permissions || []);
+  const hasPermission = (code) => !!user?.is_superadmin || permissions.has("*") || permissions.has(code);
+  // Absence of a flag defaults to enabled (matches backend require_feature semantics).
+  const featureEnabled = (key) => features[key] !== false;
 
   return (
     <AuthContext.Provider
-      value={{ user, setUser, tenants, selectedTenantId, setSelectedTenantId, loadTenants, checkAuth, logout }}
+      value={{ user, setUser, tenants, selectedTenantId, setSelectedTenantId, loadTenants,
+               checkAuth, logout, hasPermission, featureEnabled }}
     >
       {children}
     </AuthContext.Provider>
