@@ -20,7 +20,7 @@
     "/app/backend/tests/test_prompt05_regressions.py (new)"
   ],
   "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from request)",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from request)",
   "seed_data_creation": "Created TEST_ prefixed payments for stripe (failed) and mock (succeeded) against acme tenant; ledger entries persist but are correctly scoped.",
   "retest_needed": false,
   "should_main_agent_self_test": false,

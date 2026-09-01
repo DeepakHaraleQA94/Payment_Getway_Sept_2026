@@ -15,7 +15,7 @@ import pytest
 
 BASE = os.environ.get("PUBLIC_BASE_URL", "https://pay-gateway-core.preview.emergentagent.com")
 ADMIN_EMAIL = "admin@cloudpay.io"
-ADMIN_PASSWORD = "Admin@12345"
+ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
 def _cookie(resp, name):

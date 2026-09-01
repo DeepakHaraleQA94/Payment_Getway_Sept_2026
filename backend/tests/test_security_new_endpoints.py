@@ -12,7 +12,7 @@ import pytest
 
 BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8001")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cloudpay.io")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@12345")
+ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
 def _cookie(resp, name):
@@ -114,3 +114,45 @@ def test_new_endpoints_never_leak_secrets(admin, two_tenants):
         text = admin.get(path).text.lower()
         for leak in ("ciphertext", "credential_ref", "secret", "fernet", "private_key"):
             assert leak not in text, f"{leak} leaked in {path}"
+
+
+# ----------------------------- hardening: headers, rate limit, config -----------------------------
+def test_security_headers_present():
+    anon = httpx.Client(base_url=BASE, timeout=30)
+    r = anon.get("/api/")
+    anon.close()
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "DENY"
+    assert "referrer-policy" in r.headers
+    assert "permissions-policy" in r.headers
+    assert r.headers.get("cross-origin-opener-policy") == "same-origin"
+
+
+def test_rate_limit_engages_on_forgot_password():
+    """Repeated forgot-password from one IP is throttled (429). Robust to residual bucket state."""
+    anon = httpx.Client(base_url=BASE, timeout=30)
+    codes = [anon.post("/api/auth/forgot-password",
+                       json={"email": "ratelimit-probe@test.com"}).status_code for _ in range(8)]
+    anon.close()
+    assert 429 in codes
+    assert all(c in (200, 429) for c in codes)
+
+
+def test_production_config_fails_fast_on_insecure_settings():
+    """Settings.validate() must raise in production for wildcard CORS / missing secrets."""
+    from app.core.config import Settings
+    saved = dict(os.environ)
+    try:
+        os.environ["APP_ENV"] = "production"
+        os.environ["CORS_ORIGINS"] = "*"
+        with pytest.raises(RuntimeError):
+            Settings().validate()
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def test_dev_config_returns_warnings_without_raising():
+    from app.core.config import settings
+    warnings = settings.validate()
+    assert isinstance(warnings, list)

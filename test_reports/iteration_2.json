@@ -26,7 +26,7 @@
   ],
   "updated_files": ["/app/backend/tests/test_commerce.py"],
   "success_rate": {"backend": "100% (31/31)", "frontend": "100% of tested flows"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md)",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from /app/memory/test_credentials.md)",
   "seed_data_creation": "Created TEST_ prefixed API keys, checkout sessions, webhook endpoints (auto-deleted) and payments during pytest. Also generated UI-side API key, checkout session (paid via public page), webhook endpoint pointing at httpbin.org, and multiple CSV downloads.",
   "retest_needed": false,
   "main_agent_can_self_test": true,

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_tenant_from_api_key, require_permission, resolve_tenant_id
+from app.core.ratelimit import rate_limit
 from app.core.security import generate_token
 from app.models.commerce import CheckoutSession
 from app.models.tenant import Tenant
@@ -62,7 +63,8 @@ async def create_session(body: CheckoutCreate, tenant_id: str | None = None,
 # ---- API-key programmatic creation (from the tenant's own site) ----
 @router.post("/v1/checkout/sessions")
 async def api_create_session(body: CheckoutCreate, request_tenant: Tenant = Depends(get_tenant_from_api_key),
-                             db: AsyncSession = Depends(get_db)):
+                             db: AsyncSession = Depends(get_db),
+                             _rl: None = Depends(rate_limit("checkout_api_create", 60, 60))):
     session = await _create_session(db, tenant_id=request_tenant.id, body=body)
     await db.commit()
     await db.refresh(session)
@@ -72,7 +74,8 @@ async def api_create_session(body: CheckoutCreate, request_tenant: Tenant = Depe
 
 # ---- Public checkout page (no auth) ----
 @router.get("/public/checkout/{token}")
-async def public_get_session(token: str, db: AsyncSession = Depends(get_db)):
+async def public_get_session(token: str, db: AsyncSession = Depends(get_db),
+                             _rl: None = Depends(rate_limit("checkout_get", 60, 60))):
     res = await db.execute(select(CheckoutSession).where(CheckoutSession.token == token))
     session = res.scalar_one_or_none()
     if not session:
@@ -97,7 +100,8 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/public/checkout/{token}/pay")
-async def public_pay(token: str, body: CheckoutPay, db: AsyncSession = Depends(get_db)):
+async def public_pay(token: str, body: CheckoutPay, db: AsyncSession = Depends(get_db),
+                     _rl: None = Depends(rate_limit("checkout_pay", 20, 60))):
     res = await db.execute(select(CheckoutSession).where(CheckoutSession.token == token))
     session = res.scalar_one_or_none()
     if not session:

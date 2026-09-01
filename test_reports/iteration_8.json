@@ -23,7 +23,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from problem statement; login returns access_token via Set-Cookie header).",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from problem statement; login returns access_token via Set-Cookie header).",
   "seed_data_creation": "No new seed data. Existing 'acme' tenant used for live curl checks.",
   "retest_needed": false,
   "main_agent_can_self_test": true,

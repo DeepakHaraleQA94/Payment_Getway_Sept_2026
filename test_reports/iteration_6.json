@@ -20,7 +20,7 @@
     "/app/backend/tests/test_payment_state_invariants.py (new, 5 supplemental tests)"
   ],
   "success_rate": {"backend": "100% (75/75 serial)", "frontend": "skipped per request"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md)",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from /app/memory/test_credentials.md)",
   "seed_data_creation": "Ephemeral payments/refunds/audit rows on the seeded 'acme' tenant; no schema or seed changes.",
   "retest_needed": false,
   "main_agent_can_self_test": true,

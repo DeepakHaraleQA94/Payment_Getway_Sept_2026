@@ -32,7 +32,7 @@
     "/app/backend/tests/test_extended.py (new)"
   ],
   "success_rate": {"backend": "100% (22/22)", "frontend": "100% of tested flows"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (present in /app/memory/test_credentials.md)",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (present in /app/memory/test_credentials.md)",
   "seed_data_creation": "Created TEST_ prefixed tenants, users, and fee rules during pytest runs. Also generated multiple payments/refunds/settlements on Acme Commerce tenant via UI (visible in Payments, Refunds, Settlements grids).",
   "retest_needed": false,
   "main_agent_can_self_test": true,

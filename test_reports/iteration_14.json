@@ -17,7 +17,7 @@
   ],
   "updated_files": ["/app/frontend/src/components/common.jsx"],
   "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (super admin). Tenant 'Acme Commerce' for populated stability + recovery log.",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (super admin). Tenant 'Acme Commerce' for populated stability + recovery log.",
   "seed_data_creation": "Generated 1 custom-range report (2025-01-01..2025-01-31) on Empty Co tenant. Saved email settings on Empty Co tenant (enabled=true, recipient=test-reports@example.com, daily+monthly, attach=false).",
   "retest_needed": false,
   "main_agent_can_self_test": true,

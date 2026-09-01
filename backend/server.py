@@ -34,6 +34,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Baseline security response headers for every request."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    if settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
 for r in (auth.router, tenants.router, iam.router, config_router.router,
           payments.router, finance.router, system.router,
           api_keys.router, webhooks.router, checkout.router, reports_export.router,
@@ -73,6 +87,10 @@ async def dashboard_summary(tenant_id: str | None = None, db: AsyncSession = Dep
 async def on_startup():
     from app.core.storage import init_storage
     from app.scheduler import start_scheduler
+
+    # Fail fast on insecure production configuration; log warnings otherwise.
+    for warning in settings.validate():
+        logger.warning("Config security warning: %s", warning)
 
     async with AsyncSessionLocal() as db:
         try:

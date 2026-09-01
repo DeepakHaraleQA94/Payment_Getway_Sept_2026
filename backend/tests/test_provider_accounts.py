@@ -21,7 +21,7 @@ from app.services.secret_store import EncryptedDbSecretStore, get_secret_store
 
 BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8001")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cloudpay.io")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@12345")
+ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
 # ----------------------------- secret store (unit) -----------------------------

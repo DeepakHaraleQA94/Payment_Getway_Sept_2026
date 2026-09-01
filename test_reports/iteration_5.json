@@ -16,7 +16,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "100% (60/60 serial)", "frontend": "skipped per request"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md); ClientOps test users and an 'iso*' isolated tenant created at runtime by the suite.",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from /app/memory/test_credentials.md); ClientOps test users and an 'iso*' isolated tenant created at runtime by the suite.",
   "seed_data_creation": "Fresh isolated tenant per module (slug iso<rand>), a ClientOps role with only payment.create+refund.create, and one iso_<rand>@test.com user. Also created ephemeral payments, api-keys, and a refunds feature flag; state is confined to the throw-away tenant, so it does not affect acme or other suites.",
   "retest_needed": false,
   "main_agent_can_self_test": true,

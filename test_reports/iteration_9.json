@@ -14,7 +14,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "100% (99/99)", "frontend": "100% (all covered flows passed)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (super admin)",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (super admin)",
   "seed_data_creation": "Created one sandbox payment via UI on active tenant (TEST_test9fdeff) with reference TESTui1788267577, amount $100.00, status succeeded via mock provider plugin.",
   "retest_needed": false,
   "main_agent_can_self_test": true,

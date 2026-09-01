@@ -25,7 +25,7 @@
   ],
   "updated_files": ["/app/backend/tests/test_iteration3.py"],
   "success_rate": {"backend": "100% (41/41)", "frontend": "100% of tested flows"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md)",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from /app/memory/test_credentials.md)",
   "seed_data_creation": "Created TEST_ webhook endpoints (auto-deleted at teardown), branding accent set to #10b981 then #f97316 for Acme, uploaded 1x1 test PNG logo, generated multiple scheduled reports for Acme during backend + UI runs (visible in Reports page listing).",
   "retest_needed": false,
   "main_agent_can_self_test": true,

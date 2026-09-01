@@ -17,6 +17,7 @@ from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, permission_codes
+from app.core.ratelimit import rate_limit
 from app.core.security import (
     create_access_token,
     create_mfa_token,
@@ -104,7 +105,8 @@ async def register(body: RegisterRequest, response: Response, request: Request, 
 
 
 @router.post("/login")
-async def login(body: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db),
+                _rl: None = Depends(rate_limit("auth_login", 100, 60))):
     email = body.email.lower()
     identifier = f"{_client_ip(request)}:{email}"
     res = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == identifier))
@@ -155,7 +157,8 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
 
 
 @router.post("/mfa/verify")
-async def mfa_verify(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+async def mfa_verify(request: Request, response: Response, db: AsyncSession = Depends(get_db),
+                     _rl: None = Depends(rate_limit("auth_mfa_verify", 10, 300))):
     body = await request.json()
     mfa_token, code = body.get("mfa_token"), body.get("code")
     if not mfa_token or not code:
@@ -315,7 +318,8 @@ class ChangePasswordBody(BaseModel):
 
 
 @router.post("/forgot-password")
-async def forgot_password(body: ForgotPasswordBody, db: AsyncSession = Depends(get_db)):
+async def forgot_password(body: ForgotPasswordBody, db: AsyncSession = Depends(get_db),
+                          _rl: None = Depends(rate_limit("auth_forgot", 5, 300))):
     email = body.email.lower()
     res = await db.execute(select(User).where(User.email == email))
     user = res.scalar_one_or_none()
@@ -333,7 +337,8 @@ async def forgot_password(body: ForgotPasswordBody, db: AsyncSession = Depends(g
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordBody, db: AsyncSession = Depends(get_db)):
+async def reset_password(body: ResetPasswordBody, db: AsyncSession = Depends(get_db),
+                         _rl: None = Depends(rate_limit("auth_reset", 10, 300))):
     token_hash = hash_reset_token(body.token)
     res = await db.execute(select(SecurityToken).where(
         SecurityToken.token_hash == token_hash, SecurityToken.purpose == "password_reset"))

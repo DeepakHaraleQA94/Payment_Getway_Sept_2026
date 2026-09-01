@@ -15,7 +15,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "100% (115/115)", "frontend": "100% (all targeted flows)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345",
+  "test_credentials": "admin@cloudpay.io / [REDACTED]",
   "seed_data_creation": "One sandbox payment created via UI in acme tenant (reference UITEST-<ts>, $12.34, succeeded). Backend pytest created transient TEST_-prefixed tenants (visible in topbar).",
   "retest_needed": false,
   "should_main_agent_self_test": false,

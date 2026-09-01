@@ -17,7 +17,7 @@ import pytest
 
 BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8001")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cloudpay.io")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@12345")
+ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 SENSITIVE_PATTERNS = [
     re.compile(r"\b4\d{15}\b"),          # bare 16-digit PAN starting with 4

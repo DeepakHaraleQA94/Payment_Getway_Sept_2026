@@ -30,9 +30,9 @@ class Settings:
         self.access_token_minutes: int = int(os.environ.get("ACCESS_TOKEN_MINUTES", "30"))
         self.refresh_token_days: int = int(os.environ.get("REFRESH_TOKEN_DAYS", "7"))
 
-        # Admin seeding
+        # Admin seeding (no hard-coded credentials; sourced from the environment only)
         self.admin_email: str = os.environ.get("ADMIN_EMAIL", "admin@cloudpay.io").lower()
-        self.admin_password: str = os.environ.get("ADMIN_PASSWORD", "Admin@12345")
+        self.admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
 
         # CORS / frontend
         self.frontend_url: str = os.environ.get("FRONTEND_URL", "http://localhost:3000")
@@ -76,6 +76,24 @@ class Settings:
     def cookie_secure(self) -> bool:
         # Always secure over HTTPS preview/prod; kept True for samesite=none cookies.
         return True
+
+    def validate(self) -> list[str]:
+        """Security configuration check. Returns a list of warnings; in production any
+        finding is a hard blocker and raises, so an insecure prod deploy fails fast."""
+        problems: list[str] = []
+        if len(self.jwt_secret) < 32:
+            problems.append("JWT_SECRET must be at least 32 characters")
+        if (self.cors_origins or "").strip() == "*":
+            problems.append("CORS_ORIGINS is a wildcard '*' (set explicit origins)")
+        if not self.admin_password:
+            problems.append("ADMIN_PASSWORD is not set")
+        if not self.secret_store_key:
+            problems.append("SECRET_STORE_KEY is not set (auto-generated in non-production only)")
+        if self.is_production and self.frontend_url.startswith("http://"):
+            problems.append("FRONTEND_URL must use https in production")
+        if self.is_production and problems:
+            raise RuntimeError("Insecure production configuration: " + "; ".join(problems))
+        return problems
 
 
 @lru_cache

@@ -32,7 +32,7 @@
     "/app/backend/tests/test_iter11_srd_public.py (new)"
   ],
   "success_rate": {"backend": "100% (127/127 full suite + 6/6 new iter11 tests)", "frontend": "100% (all targeted SRD flows)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345",
+  "test_credentials": "admin@cloudpay.io / [REDACTED]",
   "seed_data_creation": "Created transient TEST_/route-/iter11-/empty-/creds-/fov- tenants via API + one UI 'TEST-AUTO-<ts>' auto-routed sandbox payment in the topbar-active 'Fov' tenant + one live 'Example External PSP (reference)' provider account with credentials_ref (priority 77) on the same tenant. All are TEST- prefixed or ephemeral.",
   "retest_needed": false,
   "should_main_agent_self_test": true,

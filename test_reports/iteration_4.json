@@ -18,7 +18,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "100% (50/50 serial)", "frontend": "100% of tested flows (login, forgot, security, MFA enroll+enforce, sessions)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md); MFA test users registered ad-hoc.",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (from /app/memory/test_credentials.md); MFA test users registered ad-hoc.",
   "seed_data_creation": "Registered a handful of throw-away TEST users (ex_*, lh_*, mfaui_*, sec_*) for auth flows. No shared/admin state mutated (admin MFA left disabled as requested).",
   "retest_needed": false,
   "main_agent_can_self_test": true,

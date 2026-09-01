@@ -17,7 +17,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (all 5 acceptance criteria verified)"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345",
+  "test_credentials": "admin@cloudpay.io / [REDACTED]",
   "seed_data_creation": "Tenant 'Failover Test 1788275864' (slug fov-1788275864, id af372cbf-29a4-4072-bbfc-1dde342090f1) with mock@10 + examplepsp@20 sandbox accounts. Payments: FOV-1788275881 (auto, 7013 minor, failed over) and DIR-1788275864 (direct mock, 5000 minor).",
   "retest_needed": false,
   "should_main_agent_self_test": true,

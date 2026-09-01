@@ -302,6 +302,56 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Result: 158 backend tests pass serially (`pytest tests/ -n0`), twice consecutively. No enhancements
   proposed going forward per user instruction.
 
+## Security Hardening & Secret-Exposure Audit (2026-06)
+### Vulnerabilities found
+- Exposed credential: the super-admin password `Admin@12345` was committed in tracked files —
+  `auth_testing.md`, a hardcoded default in `config.py`, `Login.jsx` (prefilled form), and 15 test
+  files (hardcoded literals / os.environ fallbacks). Also present in historical test_reports JSON.
+- No security response headers.
+- Rate limiting missing on abuse-sensitive endpoints (MFA verify TOTP brute force, forgot/reset
+  spam, public checkout). Login had DB lockout but no IP-wide backstop.
+- No production config validation (wildcard CORS / missing SECRET_STORE_KEY could ship silently).
+
+### Fixes applied
+- ROTATED the admin password to a new strong value (backend/.env `ADMIN_PASSWORD`); seed re-syncs it
+  on startup. Old password now invalid, so all historical copies are useless.
+- Purged `Admin@12345` from every tracked file: sanitized `auth_testing.md`, removed the hardcoded
+  default in `config.py` (env-only now), cleared the `Login.jsx` prefill, switched all 15 test files
+  to `os.environ["ADMIN_PASSWORD"]`, redacted the historical test_reports JSON.
+- Verified `.gitignore` blocks `.env`, `*.env`, `*.key`, `credentials.json`, `memory/test_credentials.md`.
+- Added baseline security headers middleware (X-Content-Type-Options, X-Frame-Options=DENY,
+  Referrer-Policy, Permissions-Policy, COOP; HSTS in production).
+- Added an in-process rate limiter (`core/ratelimit.py`) on login (100/min IP backstop), MFA verify
+  (10/5min), forgot-password (5/5min), reset-password (10/5min), public checkout get/pay and API-key
+  session create.
+- Added `Settings.validate()` — fails fast in production on wildcard CORS, short JWT_SECRET, missing
+  SECRET_STORE_KEY/ADMIN_PASSWORD, http FRONTEND_URL; logs warnings in non-prod. Called at startup.
+
+### Verified (already correct, no change needed)
+- Tenant isolation on every tenant-scoped endpoint (resolve_tenant_id) — covered by
+  test_authz_isolation + test_security_new_endpoints.
+- RBAC via require_permission on all mutating endpoints; API keys hashed (sha256), active-flag +
+  tenant-active checks, revoke → 401.
+- Idempotency/duplicate-payment protection (idempotency_key) — covered by state-invariant tests.
+- Webhook HMAC-SHA256 signature per endpoint; mock/sandbox unchanged; secret never returned by API
+  (omitted from WebhookOut) and never logged.
+- Provider credentials stored Fernet-encrypted; audit stores only `has_credentials` flag; secret
+  store never logs/returns secrets.
+- Public checkout token = 192-bit random (non-enumerable); pay is replay-safe (status + idempotency).
+- Password reset: no account enumeration, hashed single-use TTL tokens, token_version revoke-all.
+
+### Tests executed
+- Full backend suite serially: `pytest tests/ -n0` → 162 passed (twice). Includes new hardening tests
+  (headers present, rate-limit engages, production config fail-fast) in test_security_new_endpoints.py.
+
+### Remaining production blockers / notes
+- Set production env before go-live: `APP_ENV=production`, explicit `CORS_ORIGINS` (not `*`), a
+  provisioned `SECRET_STORE_KEY`, https `FRONTEND_URL`, and a fresh `ADMIN_PASSWORD`. `validate()`
+  will refuse to start if any are insecure.
+- Rate limiter is in-process (per-worker); move to Redis when scaling to multiple workers.
+- Git history still contains the old (now-invalid) password in prior commits; history rewrite is not
+  performed here (platform-managed .git). The rotation makes those copies unusable.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

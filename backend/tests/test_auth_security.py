@@ -86,7 +86,7 @@ def test_cross_tenant_access_denied():
         # Fetch a real tenant id as this non-privileged user is not allowed to touch it.
         admin = _client()
         ar = admin.post("/api/auth/login", json={"email": os.environ.get("ADMIN_EMAIL", "admin@cloudpay.io"),
-                                                 "password": os.environ.get("ADMIN_PASSWORD", "Admin@12345")})
+                                                 "password": os.environ["ADMIN_PASSWORD"]})
         atoken = _cookie(ar, "access_token")
         tenants = admin.get("/api/tenants", headers=_bearer(atoken)).json()
         acme = next(t["id"] for t in tenants if t["slug"] == "acme")
@@ -122,7 +122,7 @@ def test_privileged_user_flagged_for_mfa():
     """Admin (privileged) is flagged as requiring MFA enrollment."""
     with _client() as c:
         r = c.post("/api/auth/login", json={"email": os.environ.get("ADMIN_EMAIL", "admin@cloudpay.io"),
-                                            "password": os.environ.get("ADMIN_PASSWORD", "Admin@12345")})
+                                            "password": os.environ["ADMIN_PASSWORD"]})
         assert r.status_code == 200
         assert r.json().get("mfa_enrollment_required") is True
 

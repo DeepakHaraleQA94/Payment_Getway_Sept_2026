@@ -14,7 +14,7 @@
   ],
   "updated_files": [],
   "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
-  "test_credentials": "admin@cloudpay.io / Admin@12345 (super admin). Tenant switched via [data-testid=tenant-selector] -> Acme Commerce for populated recovery log.",
+  "test_credentials": "admin@cloudpay.io / [REDACTED] (super admin). Tenant switched via [data-testid=tenant-selector] -> Acme Commerce for populated recovery log.",
   "seed_data_creation": "Generated 1 weekly and 1 monthly scheduled report on the default (Empty Co) tenant during testing.",
   "retest_needed": false,
   "main_agent_can_self_test": true,
