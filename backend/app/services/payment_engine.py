@@ -78,7 +78,7 @@ async def create_payment(
 
     # Idempotency is claimed above by inserting the payment row (unique constraint on
     # tenant_id + idempotency_key) BEFORE dispatching the external charge. The same
-    # idempotency_key is forwarded so the provider (e.g. Stripe) de-dupes on its side too.
+    # idempotency_key is forwarded so a provider plugin can de-dupe on its side if supported.
     provider = get_provider(provider_key)
     result = provider.charge(
         ChargeRequest(

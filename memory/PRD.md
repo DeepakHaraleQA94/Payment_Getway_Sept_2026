@@ -75,24 +75,30 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Infra: Emergent object storage client, email adapter interface, APScheduler background jobs.
 - Tests: 41 backend tests pass (added test_iteration3.py, 10 cases).
 
-## Implemented (2026-06, PROMPT 05 — Stripe TEST/Sandbox adapter)
-- Stripe onboarded as an ISOLATED provider adapter (`app/providers/stripe_provider.py`),
-  resolved via the registry by `provider_key` — never hard-coded into the payment engine.
-- Registered ONLY in TEST mode: a live key (`sk_live_`) is never registered, so real-money
-  charges can never be dispatched. Provider discovery + monitoring surface Stripe with
-  `mode=sandbox`, `test_mode=true`.
-- Idempotency lock claimed (payment row unique constraint on tenant_id+idempotency_key)
-  BEFORE dispatching the external charge; the same idempotency_key is forwarded to Stripe.
-- Inbound Stripe webhook `POST /api/webhooks/stripe` (public): verifies signature when
-  `STRIPE_WEBHOOK_SECRET` is set (skips + parses JSON otherwise), reconciles payment status
-  idempotently via the state machine (`payment_intent.succeeded/payment_failed/canceled`),
-  audited; never posts ledger (sync charge flow owns financial mutations).
-- Graceful degradation: with the env's placeholder `sk_test_` key, real Stripe calls fail
-  and the payment resolves to `failed` (no ledger credit) — safe by design.
-- Tests: 95 backend tests pass serially (`pytest tests/ -n0`); added test_stripe_provider.py
-  (11) + test_prompt05_regressions.py (9).
-- NOTE: `STRIPE_API_KEY` in `.env` is a placeholder ("sk_test_emergent"); replace with a real
-  Stripe TEST secret key to process actual sandbox charges. `STRIPE_WEBHOOK_SECRET` is empty.
+## Note (2026-06) — Superseded PROMPT 05 Stripe adapter
+- A Stripe TEST-mode adapter was briefly added, then FULLY REVERSED per an explicit
+  architectural correction (see next section). No Stripe/Razorpay code, config, or
+  credentials remain anywhere in the codebase.
+
+## Architecture correction (2026-06) — Provider-agnostic plugin core
+- REVERSED the earlier Stripe integration. CloudPay core is now strictly provider-agnostic:
+  no Stripe/Razorpay or any provider-specific code in payment_engine, models, routing, ledger,
+  checkout, or the (outbound) webhook architecture.
+- Standardized provider plugin contract in `app/providers/base.py` (`PaymentProviderAdapter`
+  ABC): capability discovery, credential-reference interface (names only, never secret values),
+  sandbox/live-mode abstraction, health-check, charge/refund/status, and a normalized inbound
+  webhook contract (`verify_webhook` -> `ProviderWebhookEvent`).
+- Registry (`app/providers/registry.py`): generic register/get/discovery. Only the built-in
+  Mock dev/test plugin ships. New providers register themselves without changing core.
+- Generic provider endpoints (core, provider-agnostic): GET /api/providers/available (discovery),
+  GET /api/providers/{key}/capabilities, GET /api/providers/{key}/health, and a generic public
+  inbound webhook POST /api/providers/{key}/webhook that delegates verification+translation to
+  the plugin and reconciles payment status via the state machine (no ledger side effects).
+- Removed Stripe plugin, STRIPE_* config keys and .env entries, and all Stripe-specific webhook
+  code/tests. No provider-specific credentials remain.
+- Tests: 89 backend tests pass serially (`pytest tests/ -n0`); added test_provider_architecture.py
+  (14 tests) verifying the contract, discovery/isolation, capability/credential/health interfaces,
+  sandbox-live abstraction, and the generic webhook contract via the Mock provider.
 
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.

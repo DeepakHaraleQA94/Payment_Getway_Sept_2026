@@ -1,7 +1,7 @@
 """Feature flags, providers, fee rules management."""
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +10,8 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_permission, resolve_tenant_id
 from app.models.feature import FeatureFlag
 from app.models.finance import FeeRule
-from app.models.payment import PaymentProvider
-from app.providers.registry import list_providers
+from app.models.payment import Payment, PaymentProvider
+from app.providers.registry import get_provider, has_provider, list_providers
 from app.schemas import (
     FeatureFlagCreate,
     FeatureFlagOut,
@@ -21,6 +21,7 @@ from app.schemas import (
     ProviderCreate,
     ProviderOut,
 )
+from app.services import payment_state
 
 router = APIRouter(prefix="/api", tags=["config"])
 
@@ -71,6 +72,70 @@ async def update_feature(feature_id: uuid.UUID, body: FeatureFlagUpdate, db: Asy
 @router.get("/providers/available")
 async def available_providers(user=Depends(get_current_user)):
     return list_providers()
+
+
+@router.get("/providers/{provider_key}/capabilities")
+async def provider_capabilities(provider_key: str, user=Depends(get_current_user)):
+    if not has_provider(provider_key):
+        raise HTTPException(status_code=404, detail="Unknown provider")
+    return get_provider(provider_key).capabilities()
+
+
+@router.get("/providers/{provider_key}/health")
+async def provider_health(provider_key: str, user=Depends(get_current_user)):
+    if not has_provider(provider_key):
+        raise HTTPException(status_code=404, detail="Unknown provider")
+    return {"provider": provider_key, **get_provider(provider_key).health_check()}
+
+
+@router.post("/providers/{provider_key}/webhook")
+async def provider_inbound_webhook(provider_key: str, request: Request,
+                                   db: AsyncSession = Depends(get_db)):
+    """Generic inbound provider webhook (provider -> CloudPay). Public, no session auth.
+
+    The core contains NO provider-specific logic: it delegates verification + translation
+    to the plugin's `verify_webhook`, which returns a normalized event, then reconciles the
+    matching payment's status via the state machine. Never posts ledger entries — the
+    synchronous charge flow owns financial mutations.
+    """
+    if not has_provider(provider_key):
+        raise HTTPException(status_code=404, detail="Unknown provider")
+    plugin = get_provider(provider_key)
+    if not plugin.supports_webhooks():
+        raise HTTPException(status_code=400, detail="Provider does not support webhooks")
+
+    payload = await request.body()
+    try:
+        event = plugin.verify_webhook(payload, dict(request.headers))
+    except NotImplementedError:
+        raise HTTPException(status_code=400, detail="Provider does not implement webhooks")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload or signature")
+
+    if not event.provider_txn_id or not event.normalized_status:
+        return {"received": True, "ignored": True}
+
+    res = await db.execute(select(Payment).where(
+        Payment.provider_txn_id == event.provider_txn_id, Payment.provider_key == provider_key))
+    payment = res.scalar_one_or_none()
+    if not payment:
+        return {"received": True, "unmatched": True}
+
+    prev = payment.status
+    if prev == event.normalized_status:
+        return {"received": True, "already": prev}
+    if not payment_state.can_transition(prev, event.normalized_status):
+        return {"received": True, "skipped": True}
+
+    payment_state.validate_transition(prev, event.normalized_status)
+    payment.status = event.normalized_status
+    await record_audit(db, action="payment.webhook_reconcile", resource_type="payment",
+                       resource_id=payment.id, tenant_id=payment.tenant_id, actor_id=None,
+                       actor_email=f"{provider_key}:webhook",
+                       changes={"previous_state": prev, "new_state": event.normalized_status,
+                                "event_type": event.event_type, "correlation_id": str(payment.id)})
+    await db.commit()
+    return {"received": True, "reconciled": True, "status": event.normalized_status}
 
 
 @router.get("/providers", response_model=list[ProviderOut])

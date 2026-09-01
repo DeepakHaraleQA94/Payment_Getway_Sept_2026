@@ -34,7 +34,7 @@ async def monitoring_services(db: AsyncSession = Depends(get_db), user=Depends(g
         {"name": "Payment Engine", "status": "up"},
         {"name": "Provider: Mock Sandbox", "status": "up"},
     ]
-    # Reflect registered external providers (Stripe test mode) when configured.
+    # Reflect any registered external provider plugins (beyond the built-in mock).
     for cap in list_providers():
         if cap["key"] == "mock":
             continue

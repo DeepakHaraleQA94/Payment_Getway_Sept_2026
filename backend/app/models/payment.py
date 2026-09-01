@@ -28,7 +28,7 @@ class PaymentProvider(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    provider_key: Mapped[str] = mapped_column(String(60), nullable=False)  # e.g. "mock", "stripe"
+    provider_key: Mapped[str] = mapped_column(String(60), nullable=False)  # e.g. "mock" or any registered plugin
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     mode: Mapped[str] = mapped_column(String(20), nullable=False, default="sandbox")  # sandbox|live
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

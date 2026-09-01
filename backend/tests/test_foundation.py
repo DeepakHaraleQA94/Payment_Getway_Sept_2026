@@ -177,6 +177,6 @@ def test_boundaries_disabled(admin_client):
 def test_live_provider_blocked(admin_client, acme_tenant_id):
     r = admin_client.post(
         f"/api/providers?tenant_id={acme_tenant_id}",
-        json={"provider_key": "stripe_live_test", "display_name": "Stripe", "mode": "live"},
+        json={"provider_key": "acme_live_test", "display_name": "Acme Gateway", "mode": "live"},
     )
     assert r.status_code == 400
