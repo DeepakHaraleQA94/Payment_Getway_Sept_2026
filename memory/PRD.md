@@ -379,6 +379,25 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   sandbox/live separation; priority routing; failover; idempotent-failover no-duplicate; tenant
   isolation; trace-has-no-secrets. Full backend suite: 177 passed serially (`pytest tests/ -n0`).
 
+## Final End-to-End Verification (2026-06)
+- Recovered a pod-restart infra outage: PostgreSQL had reinitialized (cloudpay role + db gone).
+  Recreated the role/database, re-ran all Alembic migrations to head (a7c3e1f9b204), re-seeded
+  (admin + Acme demo). Not a code change — environment restoration.
+- Backend + security: full pytest suite 177 passed serially (`pytest tests/ -n0`) — covers auth,
+  RBAC, tenant isolation, API keys + revocation, payments, idempotency, refunds, ledger, webhooks
+  (HMAC validation), checkout replay/expiry, routing, failover, provider health, alerts, alert
+  recovery history, reports, scheduled generation, sandbox/live separation, credential references,
+  mock provider, mock UPI Intent/QR, multi-country capability routing, IDOR/cross-tenant, secret
+  non-leakage, rate limiting, session/cookie security, production config fail-fast.
+- Frontend: production build clean (CRA). Testing agent e2e = 100% across login, dashboard, tenant
+  selection, payments, refunds, providers, provider health, checkout (public branded pay page),
+  branding persistence, webhooks (real delivery + replay), API keys, reports + email settings,
+  security/admin screens, and protected-route/logout behavior.
+- No code bugs, regressions or security issues found → no code fixes applied.
+- Non-blocking observation (NOT fixed; would be an enhancement): the ACTIVE TENANT selector resets
+  to the first tenant on a hard page reload (in-app navigation preserves it); all data stays correct.
+- Phase status: COMPLETE.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).
