@@ -200,6 +200,16 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Deferred: a concrete real PSP (Stripe/Razorpay) implementing examplepsp's building blocks against
   its API + live credentials; external KMS/Vault backend; real UPI bank-rail connectivity.
 
+## Failover Insights on payment detail (2026-06)
+- Added a per-payment Details view on the Payments screen (a "Details" action on each row opens a
+  payment detail dialog). It shows status, environment, the provider actually used, provider txn,
+  amounts, and a "Routing & Failover Trace" that lists every provider tried in order — each attempt
+  with its status and a success/failure marker (red X for failed, green check for the one that
+  succeeded). Direct (non-failover) payments show a clear "routed directly, no failover" note.
+- Backend already surfaced the trace via PaymentOut.metadata.routing_attempts; no backend change.
+- Verified by the testing agent (frontend-only, 100%): failover payment shows attempt #1 mock
+  (failed/card_declined) then #2 examplepsp (succeeded); direct payment shows the empty-state note.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

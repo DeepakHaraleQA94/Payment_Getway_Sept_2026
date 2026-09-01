@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Undo2, Download } from "lucide-react";
+import { Plus, Undo2, Download, Info, GitBranch, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, money, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -23,6 +23,7 @@ export default function Payments() {
   const [providers, setProviders] = useState([]);
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
+  const [detailFor, setDetailFor] = useState(null);
   const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: "mock", environment: "sandbox" });
   const [refundAmount, setRefundAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -190,6 +191,10 @@ export default function Payments() {
                     <TableCell className="font-mono text-xs">{p.risk_score}</TableCell>
                     <TableCell><StatusBadge status={p.status} /></TableCell>
                     <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" data-testid={`details-button-${p.reference}`}
+                        onClick={() => setDetailFor(p)}>
+                        <Info className="h-3.5 w-3.5 mr-1" /> Details
+                      </Button>
                       {["succeeded", "captured", "partially_refunded"].includes(p.status) && (
                         <Button variant="ghost" size="sm" data-testid={`refund-button-${p.reference}`}
                           onClick={() => { setRefundFor(p); setRefundAmount((p.amount_minor / 100).toString()); }}>
@@ -204,6 +209,59 @@ export default function Payments() {
           </div>
         )}
       </Panel>
+
+      <Dialog open={!!detailFor} onOpenChange={(v) => !v && setDetailFor(null)}>
+        <DialogContent data-testid="payment-detail-dialog">
+          <DialogHeader>
+            <DialogTitle>Payment {detailFor?.reference}</DialogTitle>
+            <DialogDescription>Transaction detail and provider routing trace.</DialogDescription>
+          </DialogHeader>
+          {detailFor && (
+            <div className="space-y-4 py-2 text-sm">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 font-mono text-xs">
+                <div className="text-muted-foreground">Status</div>
+                <div><StatusBadge status={detailFor.status} /></div>
+                <div className="text-muted-foreground">Environment</div>
+                <div data-testid="detail-environment">{(detailFor.environment || "sandbox").toUpperCase()}</div>
+                <div className="text-muted-foreground">Provider used</div>
+                <div data-testid="detail-provider">{detailFor.provider_key}</div>
+                <div className="text-muted-foreground">Provider Txn</div>
+                <div className="break-all">{detailFor.provider_txn_id || "—"}</div>
+                <div className="text-muted-foreground">Amount / Net</div>
+                <div>{money(detailFor.amount_minor, detailFor.currency)} / {money(detailFor.net_minor, detailFor.currency)}</div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <GitBranch className="h-3.5 w-3.5" /> Routing &amp; Failover Trace
+                </div>
+                {(detailFor.metadata?.routing_attempts || []).length > 0 ? (
+                  <ol className="space-y-1.5" data-testid="routing-trace">
+                    {detailFor.metadata.routing_attempts.map((a, i) => (
+                      <li key={i} data-testid={`routing-attempt-${i}`}
+                        className="flex items-center justify-between rounded border border-border bg-secondary/40 px-3 py-2 font-mono text-xs">
+                        <span className="flex items-center gap-2">
+                          <span className="text-muted-foreground">#{i + 1}</span>
+                          <span className="font-semibold">{a.provider_key}</span>
+                          <span className="text-muted-foreground">{a.status}</span>
+                          {a.error && <span className="text-destructive">({a.error})</span>}
+                        </span>
+                        {a.success
+                          ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                          : <XCircle className="h-4 w-4 text-destructive" />}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-xs text-muted-foreground" data-testid="routing-trace-empty">
+                    Routed directly to <span className="font-mono">{detailFor.provider_key}</span> — no failover recorded.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!refundFor} onOpenChange={(v) => !v && setRefundFor(null)}>
         <DialogContent data-testid="refund-dialog">

@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only verification of the 'Failover Insights' enhancement on /dashboard/payments. Created a fresh tenant (slug fov-1788275864) via API, added mock (priority 10) and examplepsp (priority 20) sandbox provider accounts, then created two payments: FOV-1788275881 (provider_key=auto, amount_minor=7013 -> failed over mock->examplepsp) and DIR-1788275864 (provider_key=mock, direct route). In the UI (public preview URL) logged in as admin@cloudpay.io, switched the topbar tenant selector to the fresh tenant, and validated: (1) each payment row exposes data-testid='details-button-<reference>' opening the payment-detail-dialog; (2) FOV dialog shows detail-environment=SANDBOX, detail-provider=examplepsp, routing-trace visible with two attempts — routing-attempt-0 = '#1 mock failed (card_declined)' with red XCircle, routing-attempt-1 = '#2 examplepsp succeeded' with green CheckCircle2; (3) DIR dialog shows detail-provider=mock, routing-trace hidden and routing-trace-empty visible with text 'Routed directly to mock — no failover recorded.'; (4) Payments provider dropdown still exposes payment-provider-option-auto ('Auto — priority routing & failover') alongside payment-provider-option-examplepsp and payment-provider-option-mock. All acceptance criteria in the review request pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Tenant selector", "issues": ["Tenant list continues to accumulate ephemeral test tenants (fov-*, TEST_*, route-*, etc.) from prior iterations — cosmetic noise only."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter11_srd_public.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Payments.jsx (285 lines) still comfortably below the 700-line threshold; detailFor state + payment-detail-dialog nicely reuses the fetched payment row so no extra network call is needed.",
+    "routing-trace renders a.error inline in destructive color only when present — good for the DIR case where each attempt would have error=null. The empty-state fallback correctly keys off metadata?.routing_attempts?.length === 0, so a payment with an empty [] list also hits routing-trace-empty (matches backend behaviour where direct routes skip persisting routing_attempts).",
+    "The Details button is unconditionally rendered on every row (unlike Refund which is gated on status) — correct, since routing insight is useful for failed/pending payments too."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (all 5 acceptance criteria verified)"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345",
+  "seed_data_creation": "Tenant 'Failover Test 1788275864' (slug fov-1788275864, id af372cbf-29a4-4072-bbfc-1dde342090f1) with mock@10 + examplepsp@20 sandbox accounts. Payments: FOV-1788275881 (auto, 7013 minor, failed over) and DIR-1788275864 (direct mock, 5000 minor).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Failover Insights UI is fully wired. Reusable test-ids: details-button-<reference>, payment-detail-dialog, detail-environment, detail-provider, routing-trace, routing-attempt-<i>, routing-trace-empty. Seed tenant slug fov-1788275864 still exists with the two demo payments for quick manual re-verification.",
+  "rca of the issue": "N/A — no bugs found."
+}
