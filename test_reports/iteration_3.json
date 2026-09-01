@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 3 verified the three new features end-to-end: (1) Checkout Branding (logo upload to Emergent object storage + accent color PATCH), (2) Webhook Retries with exponential backoff (500 => retrying with next_attempt_at + attempts x/8, 400 => failed with no retry) + manual Replay preserving event_id + webhook.replay audit + payment count unchanged, (3) Scheduled Reports (POST /run generates CSV with PAYMENTS and SETTLEMENTS sections, email_status=skipped_no_provider, tenant contact email as recipient, tenant-scoped download requires auth). Added /app/backend/tests/test_iteration3.py with 10 pytest cases. Full regression: 41/41 backend tests pass (13 foundation + 9 extended + 9 commerce + 10 iteration3). Frontend Playwright validated: super-admin login -> Acme tenant selection -> Checkout page Branding panel (accent hex + Save succeeded, logo upload with preview + 'Logo uploaded' toast), Webhooks Delivery Inspector (77 replay buttons; visible rows with pending status for httpbin.org/status/500 endpoint showing '2/8' attempts + next retry timestamp, failed rows for /status/400 with no next retry, succeeded for /post, plus a 'replay' badge on the replayed refund.succeeded row; clicking Replay showed 'Delivery replayed (same event id)' toast), Reports page ('Run report now' produced a new active/daily row with skipped_no_provider email status and CSV download button, toast 'Daily report generated'), and public /checkout/<token> renders Acme logo (checkout-logo present) with Pay button using accent color rgb(249,115,22) == #f97316. Public /api/public/files/<id> correctly serves only kind='logo' (returns 404 for report file_ids). No critical bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/test_commerce.py",
+    "/app/backend/tests/test_extended.py",
+    "/app/backend/tests/test_foundation.py",
+    "/app/test_reports/pytest/pytest_iteration3.xml",
+    "/app/test_reports/pytest/pytest_all.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "webhook_service._is_retryable correctly classifies: None (network) => retry, 5xx/429 => retry, 4xx (except 429) => permanent failure. Verified via 400/500 tests.",
+    "webhook_service.replay preserves original.event_id and sets is_replay=True; it re-issues only the HTTP call (no payment/refund re-processing). Payment count unchanged after replay verified in test.",
+    "webhook.replay audit entry recorded with original_delivery_id + event_id in changes payload. Confirmed in DB via /api/audit.",
+    "/api/public/files/{id} correctly gates by kind=='logo' (report file_ids => 404). Good defense against unauthenticated report leakage.",
+    "/api/reports/scheduled/download/{file_id} requires auth AND enforces tenant isolation (superadmin can cross-tenant). Verified 401 when no auth.",
+    "report_generation.generate_daily_report: CSV contains a header banner + PAYMENTS + SETTLEMENTS sections with proper _fmt (minor/100.00). Email adapter is provider-agnostic (NoopEmailProvider) returning status='skipped_no_provider'.",
+    "PATCH /api/tenants/{id}/branding truncates brand_accent to [:9] (defensive) and records audit; POST /logo enforces ALLOWED_IMAGE extension whitelist and 2MB cap.",
+    "MINOR: report_generation writes the audit entry INSIDE generate_daily_report, so the scheduled job path also gets audit rows -- verify the daily cron doesn't double-record (single call path OK).",
+    "MINOR: /api/webhooks/deliveries LIMIT 200 without cursor pagination; iteration 2 review already flagged this. Same applies to /api/reports/scheduled listing (LIMIT 200).",
+    "MINOR: test_iteration3.py class-scoped fixtures raise a PytestRemovedIn10 deprecation warning (defined as instance methods). Non-blocking; will need @classmethod prefix before pytest 10."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration3.py"],
+  "success_rate": {"backend": "100% (41/41)", "frontend": "100% of tested flows"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created TEST_ webhook endpoints (auto-deleted at teardown), branding accent set to #10b981 then #f97316 for Acme, uploaded 1x1 test PNG logo, generated multiple scheduled reports for Acme during backend + UI runs (visible in Reports page listing).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All three iteration-3 features are fully functional (backend + frontend + object storage + audit). Regression: 41/41 pytest pass. To rerun: `pytest /app/backend/tests/`. Notable testids: branding (upload-logo-button, logo-file-input, accent-color-input, accent-hex-input, save-accent-button, branding-logo-preview); webhooks (tab-deliveries, replay-delivery-<id>); reports (run-report-button, report-row-<id>, download-report-<id>); public checkout (checkout-logo, checkout-pay-button). Login testids are email-input/password-input/auth-submit-button (NOT login-email/login-password/login-submit as some outdated docs suggested). Background APScheduler is running (visible in backend logs, retries every 30s and daily cron 08:00 UTC).",
+  "rca of the issue": "N/A -- no bugs required RCA."
+}

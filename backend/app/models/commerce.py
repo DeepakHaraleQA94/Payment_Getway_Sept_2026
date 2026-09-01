@@ -50,6 +50,7 @@ class WebhookDelivery(UUIDPkMixin, TimestampMixin, Base):
     endpoint_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("webhook_endpoints.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    event_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, default=uuid.uuid4, index=True)
     event: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     target_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -57,8 +58,49 @@ class WebhookDelivery(UUIDPkMixin, TimestampMixin, Base):
     response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_replay: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     __table_args__ = (Index("ix_webhook_deliveries_tenant_created", "tenant_id", "created_at"),)
+
+
+class StoredFile(UUIDPkMixin, TimestampMixin, Base):
+    """DB reference to an object-storage file (logos, report CSVs)."""
+    __tablename__ = "stored_files"
+
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    storage_path: Mapped[str] = mapped_column(String(400), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="file")  # logo|report
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class ScheduledReport(UUIDPkMixin, TimestampMixin, Base):
+    """A generated daily report (payments + settlements) available in-app."""
+    __tablename__ = "scheduled_reports"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    period_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    report_type: Mapped[str] = mapped_column(String(20), nullable=False, default="daily")
+    file_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("stored_files.id", ondelete="SET NULL"), nullable=True
+    )
+    recipient_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_status: Mapped[str] = mapped_column(String(30), nullable=False, default="skipped_no_provider")
+    payments_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    settlements_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="generated")
+
+    __table_args__ = (Index("ix_scheduled_reports_tenant_period", "tenant_id", "period_date"),)
 
 
 class CheckoutSession(UUIDPkMixin, TimestampMixin, AuditMixin, Base):

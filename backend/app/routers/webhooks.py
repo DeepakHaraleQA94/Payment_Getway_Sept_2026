@@ -81,6 +81,25 @@ async def list_deliveries(tenant_id: str | None = None, db: AsyncSession = Depen
     res = await db.execute(select(WebhookDelivery).where(WebhookDelivery.tenant_id == tid)
                            .order_by(WebhookDelivery.created_at.desc()).limit(200))
     d = res.scalars().all()
-    return [{"id": str(x.id), "event": x.event, "status": x.status, "target_url": x.target_url,
-             "response_code": x.response_code, "attempts": x.attempts, "error": x.error,
-             "payload": x.payload, "created_at": x.created_at.isoformat()} for x in d]
+    return [{"id": str(x.id), "event": x.event, "event_id": str(x.event_id), "status": x.status,
+             "target_url": x.target_url, "response_code": x.response_code, "attempts": x.attempts,
+             "max_attempts": x.max_attempts, "retryable": x.retryable, "is_replay": x.is_replay,
+             "error": x.error, "payload": x.payload,
+             "last_attempt_at": x.last_attempt_at.isoformat() if x.last_attempt_at else None,
+             "next_attempt_at": x.next_attempt_at.isoformat() if x.next_attempt_at else None,
+             "created_at": x.created_at.isoformat()} for x in d]
+
+
+@router.post("/deliveries/{delivery_id}/replay")
+async def replay_delivery(delivery_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+                          user=Depends(require_permission("webhook.manage"))):
+    original = await db.get(WebhookDelivery, delivery_id)
+    if not original or (not user.is_superadmin and original.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    new_delivery = await webhook_service.replay(db, original=original)
+    await record_audit(db, action="webhook.replay", resource_type="webhook_delivery",
+                       resource_id=new_delivery.id, tenant_id=original.tenant_id,
+                       actor_id=str(user.id), actor_email=user.email,
+                       changes={"event_id": str(original.event_id), "original_delivery_id": str(original.id)})
+    await db.commit()
+    return {"id": str(new_delivery.id), "event_id": str(new_delivery.event_id), "status": new_delivery.status}

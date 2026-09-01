@@ -60,6 +60,8 @@ class TenantOut(ORMBase):
     default_currency: str
     contact_email: str | None
     is_platform: bool
+    brand_accent: str = "#3B82F6"
+    brand_logo_file_id: uuid.UUID | None = None
     created_at: datetime
 
 

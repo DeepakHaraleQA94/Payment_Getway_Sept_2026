@@ -45,13 +45,23 @@ export default function CheckoutPage() {
     return <div className="min-h-screen flex items-center justify-center cp-grid-bg"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
+  const accent = session?.brand_accent || "#3B82F6";
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 cp-grid-bg" data-testid="public-checkout-page">
+    <div className="min-h-screen flex items-center justify-center p-6 cp-grid-bg" data-testid="public-checkout-page"
+      style={{ "--brand": accent }}>
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
         className="w-full max-w-md rounded-lg border border-border bg-card p-6 sm:p-8">
         <div className="flex items-center gap-2 mb-6">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center"><Zap className="h-5 w-5 text-white" strokeWidth={2.5} /></div>
-          <span className="font-heading text-lg font-bold">CloudPay</span>
+          {session?.logo_url ? (
+            <img src={`${process.env.REACT_APP_BACKEND_URL}${session.logo_url}`} alt="logo" data-testid="checkout-logo"
+              className="h-8 w-8 rounded-lg object-contain bg-white/5" />
+          ) : (
+            <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: accent }}>
+              <Zap className="h-5 w-5 text-white" strokeWidth={2.5} />
+            </div>
+          )}
+          <span className="font-heading text-lg font-bold">{session?.merchant || "CloudPay"}</span>
           <span className="ml-auto text-xs font-mono px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">SANDBOX</span>
         </div>
 
@@ -81,7 +91,7 @@ export default function CheckoutPage() {
                 <div className="space-y-2"><Label>Card number (sandbox)</Label>
                   <Input data-testid="checkout-pay-card" value={card} onChange={(e) => setCard(e.target.value)} className="font-mono" /></div>
                 {error && <p className="text-sm text-red-400" data-testid="checkout-pay-error">{error}</p>}
-                <Button className="w-full" data-testid="checkout-pay-button" onClick={pay} disabled={paying}>
+                <Button className="w-full text-white" style={{ background: accent }} data-testid="checkout-pay-button" onClick={pay} disabled={paying}>
                   <Lock className="h-4 w-4 mr-2" /> {paying ? "Processing…" : `Pay ${money(session?.amount_minor, session?.currency)}`}
                 </Button>
                 <p className="text-xs text-center text-muted-foreground">No real funds move. Powered by CloudPay sandbox.</p>

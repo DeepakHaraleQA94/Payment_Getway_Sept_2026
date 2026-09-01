@@ -22,6 +22,8 @@ from app.models.platform import AuditLog, FxRate, KycRecord, SystemConfig  # noq
 from app.models.commerce import (  # noqa: F401
     ApiKey,
     CheckoutSession,
+    ScheduledReport,
+    StoredFile,
     WebhookDelivery,
     WebhookEndpoint,
 )

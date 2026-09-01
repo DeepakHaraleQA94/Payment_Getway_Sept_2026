@@ -20,6 +20,7 @@ import Monitoring from "@/pages/Monitoring";
 import ApiKeys from "@/pages/ApiKeys";
 import Checkout from "@/pages/Checkout";
 import Webhooks from "@/pages/Webhooks";
+import Reports from "@/pages/Reports";
 import CheckoutPage from "@/pages/CheckoutPage";
 
 function FullLoader() {
@@ -54,6 +55,7 @@ function AppRouter() {
       <Route path="/dashboard/checkout" element={<Protected><Checkout /></Protected>} />
       <Route path="/dashboard/api-keys" element={<Protected><ApiKeys /></Protected>} />
       <Route path="/dashboard/webhooks" element={<Protected><Webhooks /></Protected>} />
+      <Route path="/dashboard/reports" element={<Protected><Reports /></Protected>} />
       <Route path="/dashboard/providers" element={<Protected><Providers /></Protected>} />
       <Route path="/dashboard/fees" element={<Protected><Fees /></Protected>} />
       <Route path="/dashboard/tenants" element={<Protected><Tenants /></Protected>} />

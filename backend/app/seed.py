@@ -28,6 +28,7 @@ PERMISSIONS = [
     ("apikey.manage", "Manage API keys", "api_keys"),
     ("webhook.manage", "Manage webhooks", "webhooks"),
     ("checkout.manage", "Manage checkout sessions", "checkout"),
+    ("report.manage", "Generate and manage reports", "reports"),
 ]
 
 

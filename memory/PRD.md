@@ -62,6 +62,19 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - CSV Reports: export payments, settlements and ledger entries to CSV from the dashboard.
 - Tests: 31 backend tests pass (added test_commerce.py, 9 cases).
 
+## Implemented (2026-09-01, iteration 3)
+- Checkout Branding: per-tenant logo upload (Emergent object storage) + accent color, applied to
+  the hosted checkout page (logo + Pay button color). Public logo served via backend.
+- Webhook Retries: exponential backoff up to 8 attempts; retries only transient failures
+  (5xx/429/timeout/network), never permanent 4xx; background scheduler (every 30s) re-attempts due
+  deliveries; manual Replay creates a new attempt preserving the original event_id (no financial
+  re-processing); every retry/replay audited. Inspector shows attempts x/max, next-retry time, replay badge.
+- Scheduled Reports: daily CSV (payments + settlements) per tenant at 08:00 UTC (APScheduler) plus
+  "Run report now"; stored for in-app download with history; recipient = tenant contact email;
+  provider-agnostic email adapter (noop, "skipped_no_provider") ready for Resend/SendGrid.
+- Infra: Emergent object storage client, email adapter interface, APScheduler background jobs.
+- Tests: 41 backend tests pass (added test_iteration3.py, 10 cases).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

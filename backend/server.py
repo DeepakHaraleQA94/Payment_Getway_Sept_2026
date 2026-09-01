@@ -13,6 +13,7 @@ from app.models.payment import Payment
 from app.models.tenant import Tenant
 from app.routers import auth, config as config_router, finance, iam, payments, system, tenants
 from app.routers import api_keys, webhooks, checkout, reports_export
+from app.routers import files, reports_scheduled
 from app.seed import seed
 from app.services import turnover_engine
 
@@ -35,7 +36,8 @@ app.add_middleware(
 
 for r in (auth.router, tenants.router, iam.router, config_router.router,
           payments.router, finance.router, system.router,
-          api_keys.router, webhooks.router, checkout.router, reports_export.router):
+          api_keys.router, webhooks.router, checkout.router, reports_export.router,
+          files.router, reports_scheduled.router):
     app.include_router(r)
 
 
@@ -69,9 +71,21 @@ async def dashboard_summary(tenant_id: str | None = None, db: AsyncSession = Dep
 
 @app.on_event("startup")
 async def on_startup():
+    from app.core.storage import init_storage
+    from app.scheduler import start_scheduler
+
     async with AsyncSessionLocal() as db:
         try:
             await seed(db)
             logger.info("CloudPay seed complete (env=%s)", settings.app_env)
         except Exception as exc:  # pragma: no cover
             logger.exception("Seed failed: %s", exc)
+    try:
+        init_storage()
+        logger.info("Object storage initialized")
+    except Exception as exc:  # pragma: no cover
+        logger.error("Storage init failed (uploads/reports may be unavailable): %s", exc)
+    try:
+        start_scheduler()
+    except Exception as exc:  # pragma: no cover
+        logger.error("Scheduler start failed: %s", exc)

@@ -78,12 +78,15 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="Checkout session not found")
     tenant = await db.get(Tenant, session.tenant_id)
+    logo_url = f"/api/public/files/{tenant.brand_logo_file_id}" if tenant and tenant.brand_logo_file_id else None
     expired = session.expires_at and session.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) \
         if session.expires_at and session.expires_at.tzinfo is None else \
         (session.expires_at and session.expires_at < datetime.now(timezone.utc))
     return {
         "token": session.token,
         "merchant": tenant.name if tenant else "Merchant",
+        "brand_accent": tenant.brand_accent if tenant else "#3B82F6",
+        "logo_url": logo_url,
         "reference": session.reference,
         "amount_minor": session.amount_minor,
         "currency": session.currency,

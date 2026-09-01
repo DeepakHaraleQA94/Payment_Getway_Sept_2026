@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Trash2, Zap, Webhook as WebhookIcon } from "lucide-react";
+import { Plus, Trash2, Zap, Webhook as WebhookIcon, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -49,6 +49,11 @@ export default function Webhooks() {
 
   const test = async (id) => {
     try { await api.post(`/webhooks/endpoints/${id}/test`); toast.success("Test event dispatched"); load(); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const replay = async (id) => {
+    try { await api.post(`/webhooks/deliveries/${id}/replay`); toast.success("Delivery replayed (same event id)"); load(); }
     catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
   };
 
@@ -113,18 +118,31 @@ export default function Webhooks() {
                       <TableHead>Target</TableHead>
                       <TableHead>Code</TableHead>
                       <TableHead>Attempts</TableHead>
+                      <TableHead>Next retry</TableHead>
                       <TableHead>Time</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {deliveries.map((d) => (
                       <TableRow key={d.id} data-testid={`delivery-row-${d.id}`}>
-                        <TableCell><span className="font-mono text-xs px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{d.event}</span></TableCell>
-                        <TableCell><StatusBadge status={d.status === "no_endpoint" ? "created" : d.status === "success" ? "succeeded" : d.status} /></TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground max-w-[220px] truncate">{d.target_url || "no endpoint configured"}</TableCell>
+                        <TableCell>
+                          <span className="font-mono text-xs px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{d.event}</span>
+                          {d.is_replay && <span className="ml-1 text-[10px] font-mono text-indigo-400">replay</span>}
+                        </TableCell>
+                        <TableCell><StatusBadge status={d.status === "no_endpoint" ? "created" : d.status === "success" ? "succeeded" : d.status === "retrying" ? "pending" : d.status === "exhausted" ? "failed" : d.status} /></TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground max-w-[200px] truncate">{d.target_url || "no endpoint configured"}</TableCell>
                         <TableCell className="font-mono text-xs">{d.response_code ?? "—"}</TableCell>
-                        <TableCell className="font-mono text-xs">{d.attempts}</TableCell>
+                        <TableCell className="font-mono text-xs">{d.attempts}/{d.max_attempts}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{d.next_attempt_at ? new Date(d.next_attempt_at).toLocaleTimeString() : "—"}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">{new Date(d.created_at).toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          {d.target_url && (
+                            <Button variant="ghost" size="sm" data-testid={`replay-delivery-${d.id}`} onClick={() => replay(d.id)}>
+                              <RefreshCw className="h-3.5 w-3.5 mr-1" /> Replay
+                            </Button>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
