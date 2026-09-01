@@ -8,10 +8,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_audit
-from app.models.payment import Payment, Refund
+from app.models.payment import Payment, PaymentProvider, Refund
 from app.providers.base import ChargeRequest
-from app.providers.registry import get_provider
+from app.providers.registry import get_provider, has_provider
 from app.services import fee_engine, ledger_service, payment_state, risk_service, webhook_service
+
+
+async def _provider_account(db, tenant_id, provider_key, environment):
+    res = await db.execute(select(PaymentProvider).where(
+        PaymentProvider.tenant_id == tenant_id,
+        PaymentProvider.provider_key == provider_key,
+        PaymentProvider.mode == environment))
+    return res.scalar_one_or_none()
 
 
 async def _existing_payment(db, tenant_id, idempotency_key):
@@ -35,6 +43,7 @@ async def create_payment(
     amount_minor: int,
     currency: str,
     provider_key: str = "mock",
+    environment: str = "sandbox",
     description: str | None = None,
     customer_email: str | None = None,
     idempotency_key: str | None = None,
@@ -42,6 +51,20 @@ async def create_payment(
 ) -> Payment:
     if amount_minor <= 0:
         raise ValueError("amount_minor must be positive")
+
+    # ---- Environment-aware provider selection (through the generic interface) ----
+    if not has_provider(provider_key):
+        raise ValueError(f"Unknown provider '{provider_key}'")
+    provider = get_provider(provider_key)
+    if not provider.supports_environment(environment):
+        raise ValueError(f"Provider '{provider_key}' does not support the '{environment}' environment")
+    account = await _provider_account(db, tenant_id, provider_key, environment)
+    if account is not None and not account.enabled:
+        raise ValueError(f"Provider '{provider_key}' is disabled for the '{environment}' environment")
+    # LIVE must never run without an explicitly configured + enabled account (no real money
+    # can move by default). SANDBOX stays permissive for the dev/reference provider.
+    if environment == "live" and account is None:
+        raise ValueError(f"No live provider account configured for '{provider_key}'")
 
     # Idempotency: return existing payment if key already used for this tenant.
     if idempotency_key:
@@ -56,6 +79,7 @@ async def create_payment(
         reference=reference,
         idempotency_key=idempotency_key,
         provider_key=provider_key,
+        environment=environment,
         amount_minor=amount_minor,
         currency=currency,
         status="pending",
@@ -79,7 +103,6 @@ async def create_payment(
     # Idempotency is claimed above by inserting the payment row (unique constraint on
     # tenant_id + idempotency_key) BEFORE dispatching the external charge. The same
     # idempotency_key is forwarded so a provider plugin can de-dupe on its side if supported.
-    provider = get_provider(provider_key)
     result = provider.create_payment(
         ChargeRequest(
             amount_minor=amount_minor,

@@ -23,7 +23,7 @@ export default function Payments() {
   const [providers, setProviders] = useState([]);
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
-  const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: "mock" });
+  const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: "mock", environment: "sandbox" });
   const [refundAmount, setRefundAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -50,17 +50,20 @@ export default function Payments() {
         amount_minor: Math.round(parseFloat(form.amount) * 100),
         currency: form.currency,
         provider_key: form.provider_key,
+        environment: form.environment,
         customer_email: form.customer_email || null,
         idempotency_key: `ui-${Date.now()}`,
       }, { params: { tenant_id: selectedTenantId } });
       toast.success("Payment processed via provider plugin");
       setOpen(false);
-      setForm({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: form.provider_key });
+      setForm({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: form.provider_key, environment: form.environment });
       load();
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
     } finally { setBusy(false); }
   };
+
+  const selectedProvider = providers.find((p) => p.key === form.provider_key);
 
   const submitRefund = async () => {
     setBusy(true);
@@ -108,6 +111,19 @@ export default function Payments() {
                       {providers.map((p) => (
                         <SelectItem key={p.key} value={p.key} data-testid={`payment-provider-option-${p.key}`}>
                           {p.display_name} · {p.mode}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Environment</Label>
+                  <Select value={form.environment} onValueChange={(v) => setForm({ ...form, environment: v })}>
+                    <SelectTrigger data-testid="payment-environment-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(selectedProvider?.supported_environments || ["sandbox"]).map((env) => (
+                        <SelectItem key={env} value={env} data-testid={`payment-environment-option-${env}`}>
+                          {env}
                         </SelectItem>
                       ))}
                     </SelectContent>

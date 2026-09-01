@@ -38,8 +38,29 @@ class PaymentProvider(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "provider_key", name="uq_provider_tenant_key"),
+        # One account per (tenant, provider, environment) — independent sandbox/live configs,
+        # each with its own enable flag and credential reference.
+        UniqueConstraint("tenant_id", "provider_key", "mode", name="uq_provider_tenant_key_mode"),
         CheckConstraint("mode in ('sandbox','live')", name="ck_provider_mode"),
+    )
+
+
+class ProviderSecret(UUIDPkMixin, TimestampMixin, Base):
+    """Encrypted-at-rest secret store entry. Maps an opaque credential reference to ciphertext.
+
+    Provider account rows store only `credentials_ref`; the raw secret lives here as a Fernet
+    ciphertext blob and is never returned by any API or written to logs/audit.
+    """
+    __tablename__ = "provider_secrets"
+
+    ref: Mapped[str] = mapped_column(String(200), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("ref", name="uq_provider_secret_ref"),
     )
 
 
@@ -53,6 +74,7 @@ class Payment(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_key: Mapped[str] = mapped_column(String(60), nullable=False, default="mock")
     provider_txn_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    environment: Mapped[str] = mapped_column(String(20), nullable=False, default="sandbox")  # sandbox|live
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)  # amount in minor units
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     fee_minor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -69,6 +91,7 @@ class Payment(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_payment_tenant_idem"),
         Index("ix_payments_tenant_created", "tenant_id", "created_at"),
         CheckConstraint("amount_minor >= 0", name="ck_payment_amount_nonneg"),
+        CheckConstraint("environment in ('sandbox','live')", name="ck_payment_environment"),
     )
 
 

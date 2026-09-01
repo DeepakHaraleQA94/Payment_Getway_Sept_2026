@@ -19,7 +19,7 @@ export default function Providers() {
   const [available, setAvailable] = useState([]);
   const [configured, setConfigured] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ provider_key: "mock", display_name: "", priority: 10 });
+  const [form, setForm] = useState({ provider_key: "mock", display_name: "", priority: 10, mode: "sandbox", credentials: {} });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -33,23 +33,36 @@ export default function Providers() {
   }, [selectedTenantId]);
   useEffect(() => { load(); }, [load]);
 
+  const selectedMeta = available.find((p) => p.key === form.provider_key);
+
   const add = async () => {
     setBusy(true);
     try {
       const meta = available.find((p) => p.key === form.provider_key);
+      const hasCreds = (meta?.required_credentials || []).length > 0;
       await api.post("/providers", {
         provider_key: form.provider_key,
         display_name: form.display_name || meta?.display_name || form.provider_key,
-        mode: "sandbox",
+        mode: form.mode,
         enabled: true,
         priority: Number(form.priority) || 100,
         supported_currencies: meta?.supported_currencies || [],
+        credentials: hasCreds ? form.credentials : null,
       }, { params: { tenant_id: selectedTenantId } });
-      toast.success("Provider adapter configured");
+      toast.success("Provider account configured");
       setOpen(false);
+      setForm({ provider_key: "mock", display_name: "", priority: 10, mode: "sandbox", credentials: {} });
       load();
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
     finally { setBusy(false); }
+  };
+
+  const toggleEnabled = async (p) => {
+    try {
+      await api.patch(`/providers/${p.id}`, { enabled: !p.enabled });
+      toast.success(p.enabled ? "Account disabled" : "Account enabled");
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
   };
 
   return (
@@ -97,6 +110,34 @@ export default function Providers() {
                   })()}
                 </div>
                 <div className="space-y-2">
+                  <Label>Environment</Label>
+                  <Select value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v })}>
+                    <SelectTrigger data-testid="provider-environment-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(selectedMeta?.supported_environments || ["sandbox"]).map((env) => (
+                        <SelectItem key={env} value={env} data-testid={`provider-environment-option-${env}`}>
+                          {env}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(selectedMeta?.required_credentials || []).length > 0 && (
+                  <div className="space-y-2" data-testid="provider-credentials-fields">
+                    <Label>Credentials (stored encrypted)</Label>
+                    {(selectedMeta.required_credentials || []).map((c) => (
+                      <Input
+                        key={c.key}
+                        data-testid={`provider-credential-${c.key}`}
+                        type={c.secret ? "password" : "text"}
+                        placeholder={c.label}
+                        value={form.credentials[c.key] || ""}
+                        onChange={(e) => setForm({ ...form, credentials: { ...form.credentials, [c.key]: e.target.value } })}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-2">
                   <Label>Display name</Label>
                   <Input data-testid="provider-name-input" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="Optional" />
                 </div>
@@ -128,13 +169,26 @@ export default function Providers() {
                 <StatusBadge status={p.enabled ? "active" : "suspended"} />
               </div>
               <div className="mt-4 flex items-center justify-between text-xs font-mono text-muted-foreground">
-                <span>MODE: {p.mode.toUpperCase()}</span>
+                <span>ENV: {p.mode.toUpperCase()}</span>
                 <span>PRIORITY: {p.priority}</span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(p.supported_currencies || []).map((c) => (
                   <span key={c} className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 border border-border">{c}</span>
                 ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <span className="font-mono text-muted-foreground" data-testid={`provider-credentials-status-${p.id}`}>
+                  {p.credentials_ref ? "CREDENTIALS: set" : "CREDENTIALS: none"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid={`provider-toggle-${p.id}`}
+                  onClick={() => toggleEnabled(p)}
+                >
+                  {p.enabled ? "Disable" : "Enable"}
+                </Button>
               </div>
             </Panel>
           ))}

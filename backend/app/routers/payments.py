@@ -33,8 +33,9 @@ async def create_payment(body: PaymentCreate, tenant_id: str | None = None, db: 
     try:
         payment = await payment_engine.create_payment(
             db, tenant_id=tid, actor=user, reference=body.reference, amount_minor=body.amount_minor,
-            currency=body.currency, provider_key=body.provider_key, description=body.description,
-            customer_email=body.customer_email, idempotency_key=body.idempotency_key, metadata=body.metadata,
+            currency=body.currency, provider_key=body.provider_key, environment=body.environment,
+            description=body.description, customer_email=body.customer_email,
+            idempotency_key=body.idempotency_key, metadata=body.metadata,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

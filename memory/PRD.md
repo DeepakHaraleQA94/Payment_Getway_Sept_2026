@@ -148,6 +148,33 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   provider records + secret-store credential binding + DB migration), execution-time
   environment selection, UPI Intent/QR real flows, real provider, routing/failover.
 
+## Provider Account Management + Secret Store + Environment Selection (2026-06)
+- Persistent per-(tenant, provider, environment) provider ACCOUNTS: unique constraint relaxed
+  to (tenant_id, provider_key, mode) so a provider can hold independent sandbox and live
+  accounts, each with its own enable flag and credential reference.
+- Secure SECRET STORE (`app/services/secret_store.py`): pluggable `SecretStore` interface with
+  a default `EncryptedDbSecretStore` (Fernet/AES) keyed by env `SECRET_STORE_KEY`
+  (auto-generated + persisted if absent). Credentials are encrypted at rest in `provider_secrets`
+  and NEVER returned by any API or written to logs/audit — accounts store only `credentials_ref`.
+- Provider account management API: POST /api/providers (stores supplied credentials encrypted,
+  per-environment duplicate guard), PATCH /api/providers/{id} (enable/disable/priority/name),
+  PUT /api/providers/{id}/credentials (set/rotate — same ref, secret never echoed),
+  DELETE /api/providers/{id} (removes account + its stored secret).
+- Environment SELECTION at execution: `PaymentCreate.environment` (default sandbox); the engine
+  validates plugin.supports_environment, resolves the per-environment account, blocks disabled
+  accounts and live-without-account, and records `payments.environment`. LIVE is safely rejected
+  today (mock is sandbox-only) — no real-money path.
+- DB migration `d2f4a7c9b310` (applied): per-env unique constraint, `provider_secrets` table,
+  `payments.environment` column + check.
+- Frontend: Providers screen adds an Environment selector, dynamic credential inputs (from the
+  plugin's required_credentials), enable/disable toggle, and a credentials-status label; Payments
+  screen adds an Environment selector.
+- Tests: 115 backend tests pass serially (`pytest tests/ -n0`); new test_provider_accounts.py
+  (secret store round-trip/encryption, credentials-never-leaked, per-env accounts, enable/disable,
+  rotate, delete, environment selection). Testing agent: 100% backend + frontend, no issues.
+- Deferred (SRD order): real provider plugin declaring LIVE support (with its own building blocks
+  + credential resolution from credential_ref), UPI Intent/QR real flows, routing/failover.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

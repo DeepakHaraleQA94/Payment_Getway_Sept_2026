@@ -21,9 +21,12 @@ from app.schemas import (
     FeeRuleCreate,
     FeeRuleOut,
     ProviderCreate,
+    ProviderCredentialsUpdate,
     ProviderOut,
+    ProviderUpdate,
 )
 from app.services import payment_state
+from app.services.secret_store import get_secret_store
 
 router = APIRouter(prefix="/api", tags=["config"])
 
@@ -238,18 +241,89 @@ async def add_provider(body: ProviderCreate, tenant_id: str | None = None, db: A
         raise HTTPException(
             status_code=400,
             detail=f"Provider '{body.provider_key}' does not support the '{body.mode}' environment")
+    # One account per (tenant, provider, environment).
     exists = await db.execute(select(PaymentProvider).where(
-        PaymentProvider.tenant_id == tid, PaymentProvider.provider_key == body.provider_key))
+        PaymentProvider.tenant_id == tid, PaymentProvider.provider_key == body.provider_key,
+        PaymentProvider.mode == body.mode))
     if exists.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Provider already configured")
-    prov = PaymentProvider(tenant_id=tid, created_by=str(user.id), **body.model_dump())
+        raise HTTPException(status_code=400,
+                            detail=f"Provider already configured for the '{body.mode}' environment")
+
+    data = body.model_dump()
+    raw_credentials = data.pop("credentials", None)
+    # Store any supplied credentials encrypted in the secret store; persist only the reference.
+    credentials_ref = None
+    if raw_credentials:
+        credentials_ref = await get_secret_store().put(db, tenant_id=tid, secret=raw_credentials)
+    prov = PaymentProvider(tenant_id=tid, created_by=str(user.id), credentials_ref=credentials_ref, **data)
     db.add(prov)
     await db.flush()
+    # Audit MUST NOT include raw credentials — reference + flags only.
     await record_audit(db, action="provider.create", resource_type="payment_provider", resource_id=prov.id,
-                       tenant_id=tid, actor_id=str(user.id), actor_email=user.email, changes=body.model_dump())
+                       tenant_id=tid, actor_id=str(user.id), actor_email=user.email,
+                       changes={"provider_key": prov.provider_key, "mode": prov.mode,
+                                "enabled": prov.enabled, "has_credentials": credentials_ref is not None})
     await db.commit()
     await db.refresh(prov)
     return prov
+
+
+async def _load_provider(db, provider_id, user):
+    prov = await db.get(PaymentProvider, provider_id)
+    if not prov:
+        raise HTTPException(status_code=404, detail="Provider account not found")
+    if not user.is_superadmin and prov.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=403, detail="Cross-tenant access denied")
+    return prov
+
+
+@router.patch("/providers/{provider_id}", response_model=ProviderOut)
+async def update_provider(provider_id: uuid.UUID, body: ProviderUpdate, db: AsyncSession = Depends(get_db),
+                          user=Depends(require_permission("provider.manage"))):
+    """Enable/disable or adjust a provider account (per environment record)."""
+    prov = await _load_provider(db, provider_id, user)
+    changes = body.model_dump(exclude_none=True)
+    for k, v in changes.items():
+        setattr(prov, k, v)
+    prov.updated_by = str(user.id)
+    await record_audit(db, action="provider.update", resource_type="payment_provider", resource_id=prov.id,
+                       tenant_id=prov.tenant_id, actor_id=str(user.id), actor_email=user.email, changes=changes)
+    await db.commit()
+    await db.refresh(prov)
+    return prov
+
+
+@router.put("/providers/{provider_id}/credentials", response_model=ProviderOut)
+async def set_provider_credentials(provider_id: uuid.UUID, body: ProviderCredentialsUpdate,
+                                   db: AsyncSession = Depends(get_db),
+                                   user=Depends(require_permission("provider.manage"))):
+    """Set/rotate an account's credentials. Stored encrypted; reference persisted, never the secret."""
+    prov = await _load_provider(db, provider_id, user)
+    ref = await get_secret_store().put(db, tenant_id=prov.tenant_id, secret=body.credentials,
+                                       ref=prov.credentials_ref)
+    prov.credentials_ref = ref
+    prov.updated_by = str(user.id)
+    await record_audit(db, action="provider.credentials_set", resource_type="payment_provider",
+                       resource_id=prov.id, tenant_id=prov.tenant_id, actor_id=str(user.id),
+                       actor_email=user.email, changes={"has_credentials": True})
+    await db.commit()
+    await db.refresh(prov)
+    return prov
+
+
+@router.delete("/providers/{provider_id}")
+async def delete_provider(provider_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+                          user=Depends(require_permission("provider.manage"))):
+    """Remove a provider account and its stored credentials."""
+    prov = await _load_provider(db, provider_id, user)
+    if prov.credentials_ref:
+        await get_secret_store().delete(db, prov.credentials_ref)
+    await record_audit(db, action="provider.delete", resource_type="payment_provider", resource_id=prov.id,
+                       tenant_id=prov.tenant_id, actor_id=str(user.id), actor_email=user.email,
+                       changes={"provider_key": prov.provider_key, "mode": prov.mode})
+    await db.delete(prov)
+    await db.commit()
+    return {"deleted": True}
 
 
 # ---- Fee rules ----

@@ -126,11 +126,25 @@ class FeatureFlagOut(ORMBase):
 class ProviderCreate(BaseModel):
     provider_key: str
     display_name: str
-    mode: str = "sandbox"
+    mode: str = "sandbox"                       # environment: sandbox | live
     enabled: bool = True
     priority: int = 100
     supported_currencies: list[str] = []
     config: dict = {}
+    # Optional raw credentials supplied at creation. Stored encrypted in the secret store;
+    # only a reference is persisted on the account. NEVER echoed back in any response.
+    credentials: dict | None = None
+
+
+class ProviderUpdate(BaseModel):
+    enabled: bool | None = None
+    priority: int | None = None
+    display_name: str | None = None
+    config: dict | None = None
+
+
+class ProviderCredentialsUpdate(BaseModel):
+    credentials: dict
 
 
 class ProviderOut(ORMBase):
@@ -142,6 +156,7 @@ class ProviderOut(ORMBase):
     enabled: bool
     priority: int
     supported_currencies: list
+    credentials_ref: str | None = None
     created_at: datetime
 
 
@@ -151,6 +166,7 @@ class PaymentCreate(BaseModel):
     amount_minor: int = Field(gt=0)
     currency: str = "USD"
     provider_key: str = "mock"
+    environment: str = "sandbox"               # explicit execution environment
     description: str | None = None
     customer_email: EmailStr | None = None
     idempotency_key: str | None = None
@@ -163,6 +179,7 @@ class PaymentOut(ORMBase):
     reference: str
     provider_key: str
     provider_txn_id: str | None
+    environment: str
     amount_minor: int
     currency: str
     fee_minor: int

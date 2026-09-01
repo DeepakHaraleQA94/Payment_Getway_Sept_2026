@@ -1,0 +1,24 @@
+{
+  "summary": "SRD phase (Provider Account Mgmt + Secret Store + Environment Selection) fully verified. Ran full backend suite serially (115 passed, incl. 8 new provider_accounts tests) and end-to-end frontend tests on Providers + Payments screens against the public preview URL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_provider_accounts.py",
+    "/app/test_reports/pytest/provider_accounts.xml",
+    "/app/test_reports/pytest/full_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Tenant selector dropdown lists many stale TEST_/Isolated tenants from previous test iterations — consider auto-cleanup of TEST_ prefixed tenants at teardown; not a bug but noise for manual QA.",
+    "SANDBOX badge in the header is a hardcoded pill — it does not reflect the environment of a specific payment; per SRD phase, it is informational only, which is fine.",
+    "The Providers page 'CREDENTIALS: set' label is good; consider also showing partial credentials_ref (masked prefix) as tooltip for operator debugging (nice-to-have)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (115/115)", "frontend": "100% (all targeted flows)"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345",
+  "seed_data_creation": "One sandbox payment created via UI in acme tenant (reference UITEST-<ts>, $12.34, succeeded). Backend pytest created transient TEST_-prefixed tenants (visible in topbar).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend must be run with -n0 (webhook xdist race). Public URL from frontend/.env is REACT_APP_BACKEND_URL=https://pay-gateway-core.preview.emergentagent.com. Login and switch tenant to Acme Commerce via data-testid=tenant-selector -> tenant-option-acme. Verified: secret store returns only credentials_ref starting 'sec_' (raw never leaked); per-(tenant,provider,env) uniqueness with proper 400s; mock live rejected with 'environment' message; PATCH enable/disable + PUT rotate keeps same ref; DELETE removes account and secret; payment env selection sandbox=OK, live=400, missing=defaults to sandbox; frontend has provider-environment-select (mock exposes only sandbox option), no dynamic credential inputs for mock (no required_credentials), provider-toggle-<id> flips Disable<->Enable and updates card, provider-credentials-status-<id> shows CREDENTIALS: set, payment-environment-select present in New Payment dialog and sandbox payment creation succeeds and shows in table.",
+  "rca of the issue": "No issues found."
+}

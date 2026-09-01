@@ -57,6 +57,10 @@ class Settings:
         self.webhook_base_delay_sec: int = int(os.environ.get("WEBHOOK_BASE_DELAY_SEC", "30"))
         self.webhook_max_backoff_sec: int = int(os.environ.get("WEBHOOK_MAX_BACKOFF_SEC", "3600"))
 
+        # Secret store master key (Fernet). Encrypts provider credentials at rest.
+        # Auto-generated + persisted by the secret store if absent (see services/secret_store.py).
+        self.secret_store_key: str = os.environ.get("SECRET_STORE_KEY", "")
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
