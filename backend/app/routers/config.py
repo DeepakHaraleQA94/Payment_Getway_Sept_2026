@@ -152,6 +152,16 @@ async def list_provider_alert_history(tenant_id: str | None = None, limit: int =
     return await alert_service.list_history(db, tid, limit=min(max(limit, 1), 200))
 
 
+@router.get("/providers/stability")
+async def get_provider_stability(tenant_id: str | None = None, window_days: int = 30,
+                                 db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Per-provider stability score derived from alert-history drops/recoveries over a window."""
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    return await alert_service.provider_stability(db, tid, window_days=min(max(window_days, 1), 365))
+
+
 @router.post("/providers/alerts/evaluate")
 async def evaluate_provider_alerts(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
                                    user=Depends(require_permission("provider.manage"))):

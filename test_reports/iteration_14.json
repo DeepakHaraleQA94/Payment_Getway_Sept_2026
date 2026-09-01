@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only validation of the three new/updated flows: (1) Custom date-range report on /dashboard/reports, (2) Email delivery settings panel with persistence across reload, and (3) Provider Stability panel on /dashboard/provider-health. All three flows pass end-to-end after fixing one real testability bug in the shared Panel component that was silently dropping data-testid (and every other extra prop). After the fix, [data-testid=email-settings-panel], [data-testid=stability-mock-sandbox] and other Panel-wrapped testids are queryable. Custom-range: empty dates -> 'Pick a start and end date' error toast, no row created; valid dates (2025-01-01..2025-01-31) -> new row appears with 'custom' type label. Email settings: 'no provider connected' badge visible, toggling enable/recipient/frequencies/attach CSV all work, Save shows 'Email report settings saved' toast, all values survive a full page reload (enabled=true, recipient=test-reports@example.com, daily=true, weekly=false, monthly=true, attach=false). Provider Stability: default tenant (Empty Co) shows stability-empty state; switching ACTIVE TENANT to 'Acme Commerce' renders stability-mock-sandbox card with numeric score (85), 'stable' rating label, filled progress bar (h-full.rounded-full div), and '1 drop · 1 recovery' line. Alert Recovery Log below still renders 2 history entries for Acme (unchanged from iter 13).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Review and keep the Panel prop-spread fix (src/components/common.jsx). Without it, several critical testids that E1 spec'd (email-settings-panel, stability-<key>-<env>, and any future Panel-wrapped panels) are silently dropped."
+  ],
+  "critical_code_review_comments": [
+    "src/components/common.jsx Panel used to accept only {children, className} and drop all other props including data-testid. This silently defeats any data-testid placed on a <Panel> in JSX. Fixed by spreading ...rest onto the underlying div. Recommend applying the same {...rest} pattern to EmptyState and StatusBadge to future-proof.",
+    "Reports.jsx StatusBadge status='active' is still hardcoded per iter_13 review (cosmetic).",
+    "ProviderHealth.jsx still polls every 15s with 5 parallel requests per tick; consider pausing on document.hidden."
+  ],
+  "updated_files": ["/app/frontend/src/components/common.jsx"],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345 (super admin). Tenant 'Acme Commerce' for populated stability + recovery log.",
+  "seed_data_creation": "Generated 1 custom-range report (2025-01-01..2025-01-31) on Empty Co tenant. Saved email settings on Empty Co tenant (enabled=true, recipient=test-reports@example.com, daily+monthly, attach=false).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Panel component now spreads extra props — any testid on <Panel data-testid=..> now reaches the DOM. Selectors used: report-type-select (opens dropdown), report-type-custom (option), custom-range-inputs, report-start-date, report-end-date, run-report-button, report-row-<id>. Email panel: email-settings-panel, email-provider-status (badge), email-enabled-switch, email-recipient-input, email-freq-{daily|weekly|monthly}, email-attach-switch, save-email-settings-button. Provider stability: provider-stability, stability-empty (empty state), stability-mock-sandbox (card wrapper), stability-score-mock-sandbox (numeric score). Tenant switcher: tenant-selector button + role='option' with tenant name."
+}

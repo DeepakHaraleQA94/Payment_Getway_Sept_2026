@@ -6,7 +6,7 @@ per healthy->unhealthy transition; send a recovery notice on unhealthy->healthy)
 Provider Health Board computation so thresholds stay consistent with routing eligibility.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -148,6 +148,42 @@ async def list_history(db, tenant_id, limit: int = 50) -> list[dict]:
              "transition": r.transition, "severity": r.severity, "reason": r.reason,
              "success_rate": float(r.success_rate) if r.success_rate is not None else None,
              "at": r.created_at.isoformat()} for r in rows]
+
+
+async def provider_stability(db, tenant_id, window_days: int = 30) -> list[dict]:
+    """Per-provider stability score from alert history over a window.
+
+    Score starts at 100 and loses 15 points per drop (alerting transition), floored at 0.
+    Ratings: stable (>=85), moderate (>=60), flaky (<60). Providers with no drops in the
+    window are shown as fully stable.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=window_days)
+    rows = (await db.execute(
+        select(ProviderAlertEvent).where(
+            ProviderAlertEvent.tenant_id == tenant_id, ProviderAlertEvent.created_at >= since)
+        .order_by(ProviderAlertEvent.created_at.desc()))).scalars().all()
+
+    agg: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r.provider_key, r.environment)
+        a = agg.get(key)
+        if a is None:
+            a = {"provider_key": r.provider_key, "environment": r.environment,
+                 "drops": 0, "recoveries": 0, "last_event_at": r.created_at.isoformat(),
+                 "last_transition": r.transition}
+            agg[key] = a
+        if r.transition == "alerting":
+            a["drops"] += 1
+        elif r.transition == "recovered":
+            a["recoveries"] += 1
+
+    out = []
+    for a in agg.values():
+        score = max(0, 100 - a["drops"] * 15)
+        rating = "stable" if score >= 85 else ("moderate" if score >= 60 else "flaky")
+        out.append({**a, "window_days": window_days, "score": score, "rating": rating})
+    out.sort(key=lambda x: (x["score"], -x["drops"]))
+    return out
 
 
 async def evaluate_all(db) -> int:

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff, BellRing, RefreshCw, History, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff, BellRing, RefreshCw, History, ArrowUpRight, ArrowDownRight, Gauge } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -139,22 +139,25 @@ export default function ProviderHealth() {
   const [data, setData] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [history, setHistory] = useState([]);
+  const [stability, setStability] = useState([]);
   const [checking, setChecking] = useState(false);
   const [thresholds, setThresholds] = useState({ success_rate_threshold: 0.5, min_sample: 5 });
   const [savingCfg, setSavingCfg] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
-    const [board, al, cfg, hist] = await Promise.all([
+    const [board, al, cfg, hist, stab] = await Promise.all([
       api.get("/providers/health-board", { params: { tenant_id: selectedTenantId } }),
       api.get("/providers/alerts", { params: { tenant_id: selectedTenantId } }),
       api.get("/providers/alerts/settings", { params: { tenant_id: selectedTenantId } }),
       api.get("/providers/alerts/history", { params: { tenant_id: selectedTenantId, limit: 30 } }),
+      api.get("/providers/stability", { params: { tenant_id: selectedTenantId, window_days: 30 } }),
     ]);
     setData(board.data);
     setAlerts(al.data);
     setThresholds(cfg.data);
     setHistory(hist.data);
+    setStability(stab.data);
   }, [selectedTenantId]);
 
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
@@ -256,6 +259,48 @@ export default function ProviderHealth() {
 
       <EnvSection env="sandbox" data={envs.sandbox} alertKeys={alertKeys} />
       <EnvSection env="live" data={envs.live} alertKeys={alertKeys} />
+
+      <div className="mt-2 mb-6" data-testid="provider-stability">
+        <div className="flex items-center gap-2 mb-3">
+          <Gauge className="h-4 w-4 text-primary" />
+          <h3 className="font-heading text-lg font-medium">Provider Stability</h3>
+          <span className="text-[11px] font-mono text-muted-foreground">last 30 days · lower score = flakier</span>
+        </div>
+        {stability.length === 0 ? (
+          <Panel><EmptyState message="No stability data yet. Scores appear once providers have alert history." testid="stability-empty" /></Panel>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {stability.map((s) => {
+              const tone = s.rating === "stable"
+                ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5"
+                : (s.rating === "moderate"
+                    ? "text-amber-400 border-amber-500/20 bg-amber-500/5"
+                    : "text-red-400 border-red-500/20 bg-red-500/5");
+              return (
+                <Panel key={`${s.provider_key}-${s.environment}`}
+                  className={`border ${tone}`} data-testid={`stability-${s.provider_key}-${s.environment}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="font-mono text-sm font-semibold truncate">{s.provider_key}</p>
+                      <p className="text-[11px] font-mono text-muted-foreground">{s.environment}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-heading font-semibold tabular-nums" data-testid={`stability-score-${s.provider_key}-${s.environment}`}>{s.score}</p>
+                      <p className="text-[10px] font-mono uppercase tracking-wide">{s.rating}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-1.5 rounded-full bg-border overflow-hidden">
+                    <div className="h-full rounded-full bg-current" style={{ width: `${s.score}%` }} />
+                  </div>
+                  <p className="mt-2 text-[11px] font-mono text-muted-foreground">
+                    {s.drops} drop{s.drops === 1 ? "" : "s"} · {s.recoveries} recover{s.recoveries === 1 ? "y" : "ies"}
+                  </p>
+                </Panel>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div className="mt-2" data-testid="alert-recovery-log">
         <div className="flex items-center gap-2 mb-3">

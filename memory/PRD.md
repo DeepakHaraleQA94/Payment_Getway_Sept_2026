@@ -267,6 +267,26 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   (period window unit, weekly/monthly run, invalid type 400, history fire+recover, no-secret-leak).
   Testing agent: frontend 100%, no issues (both new flows validated on Acme).
 
+## Custom-range Reports + Email Settings (future-ready) + Flaky Provider Score (2026-06)
+- Custom date-range reports: `report_type=custom` with `start_date`/`end_date` (YYYY-MM-DD, end
+  inclusive) added to `POST /api/reports/scheduled/run`; generate_report accepts explicit start/end.
+  Reports UI adds a "Custom range" option that reveals two date pickers.
+- Email delivery (future-ready, NO provider connected): per-tenant settings stored in
+  Tenant.settings["report_email"] (enabled, recipient_email, frequencies[daily/weekly/monthly],
+  attach_csv). `GET/PUT /api/reports/scheduled/email-settings`. generate_report gates sending on
+  these settings but still routes through the noop `email_service` adapter — email_status is one of
+  disabled / skipped_frequency / skipped_no_provider. A real provider (Resend/SendGrid/SES) can be
+  registered later with zero core changes. Reports UI has an "Email delivery" panel (toggle,
+  recipient, frequency checkboxes, CSV attach) with a "no provider connected" badge.
+- Flaky Provider Score: `alert_service.provider_stability` scores each provider from alert-history
+  drops over a window (start 100, -15 per drop; stable>=85, moderate>=60, flaky<60).
+  `GET /api/providers/stability?tenant_id=&window_days=`. Provider Health page shows a
+  "Provider Stability" card grid (score, rating, bar, drops/recoveries).
+- Shared `Panel` component now forwards extra props (data-testid etc.) — small testability fix.
+- Tests: 151 backend tests pass serially (`pytest tests/ -n0`); test_reports_and_alert_history.py
+  extended (custom range + validation, email settings roundtrip + gating + invalid-freq drop,
+  stability score). Testing agent: frontend 100%, no issues (all three flows validated on Acme).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

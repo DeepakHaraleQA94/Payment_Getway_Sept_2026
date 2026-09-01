@@ -180,7 +180,7 @@ class TestScheduledReports:
         body = r.json()
         assert "payments_count" in body
         assert "settlements_count" in body
-        assert body["email_status"] == "skipped_no_provider"
+        assert body["email_status"] in ("disabled", "skipped_no_provider", "skipped_frequency")
         assert body["file_id"]
 
         # List includes it
@@ -189,7 +189,7 @@ class TestScheduledReports:
         rows = r2.json()
         assert any(row["id"] == body["id"] for row in rows)
         row = next(row for row in rows if row["id"] == body["id"])
-        assert row["email_status"] == "skipped_no_provider"
+        assert row["email_status"] in ("disabled", "skipped_no_provider", "skipped_frequency")
         assert row["recipient_email"]  # tenant contact email
 
         # Download CSV

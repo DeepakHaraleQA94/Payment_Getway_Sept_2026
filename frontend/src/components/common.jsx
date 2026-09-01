@@ -10,9 +10,9 @@ export function PageHeader({ title, subtitle, action, testid }) {
   );
 }
 
-export function Panel({ children, className = "" }) {
+export function Panel({ children, className = "", ...rest }) {
   return (
-    <div className={`rounded-lg border border-border bg-card p-5 sm:p-6 ${className}`}>{children}</div>
+    <div className={`rounded-lg border border-border bg-card p-5 sm:p-6 ${className}`} {...rest}>{children}</div>
   );
 }
 
