@@ -177,3 +177,47 @@ def test_upi_status_endpoint_reports_state(admin):
     txn = intent.json()["intent_id"]
     s = admin.get(f"/api/providers/mock/status/{txn}")
     assert s.status_code == 200 and s.json()["status"] == "pending"
+
+
+# ----------------------------- provider health board (HTTP) -----------------------------
+def test_health_board_reports_accounts_metrics_and_failovers(admin, routed_tenant):
+    # Ensure there's a success + a failover in history for this tenant.
+    admin.post(f"/api/payments?tenant_id={routed_tenant}",
+               json={"reference": "HB-OK", "amount_minor": 6000, "currency": "USD",
+                     "provider_key": "auto", "environment": "sandbox", "idempotency_key": f"hb-{uuid.uuid4().hex}"})
+    admin.post(f"/api/payments?tenant_id={routed_tenant}",
+               json={"reference": "HB-FO", "amount_minor": 6013, "currency": "USD",
+                     "provider_key": "auto", "environment": "sandbox", "idempotency_key": f"hb-{uuid.uuid4().hex}"})
+
+    r = admin.get(f"/api/providers/health-board?tenant_id={routed_tenant}")
+    assert r.status_code == 200, r.text
+    board = r.json()
+    sandbox = board["environments"]["sandbox"]
+    keys = {a["provider_key"] for a in sandbox["accounts"]}
+    assert {"mock", "examplepsp"} <= keys
+    mock_acc = next(a for a in sandbox["accounts"] if a["provider_key"] == "mock")
+    assert mock_acc["health_status"] == "up"
+    assert mock_acc["routing_eligible"] is True
+    assert mock_acc["priority"] == 10
+    assert mock_acc["metrics"]["total"] >= 1
+    assert "checked_at" in mock_acc
+    # Failover activity captured.
+    assert any(f["reference"] == "HB-FO" for f in sandbox["recent_failovers"])
+    # Live section present and separate.
+    assert "live" in board["environments"]
+
+
+def test_health_board_never_exposes_credentials(admin, routed_tenant):
+    r = admin.get(f"/api/providers/health-board?tenant_id={routed_tenant}")
+    body = r.text
+    # No secret values or credential references may appear anywhere in the board.
+    assert "credentials_ref" not in body
+    assert "sec_" not in body
+    # Only a boolean credentials indicator is exposed.
+    acc = r.json()["environments"]["sandbox"]["accounts"][0]
+    assert isinstance(acc["has_credentials"], bool)
+
+
+def test_health_board_scoped_to_requested_tenant(admin, routed_tenant):
+    r = admin.get(f"/api/providers/health-board?tenant_id={routed_tenant}")
+    assert r.status_code == 200 and r.json()["tenant_id"] == routed_tenant

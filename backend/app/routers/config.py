@@ -26,6 +26,7 @@ from app.schemas import (
     ProviderUpdate,
 )
 from app.services import payment_state
+from app.services import provider_health as provider_health_svc
 from app.services.secret_store import get_secret_store
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -90,6 +91,17 @@ async def update_feature(feature_id: uuid.UUID, body: FeatureFlagUpdate, db: Asy
 
 
 # ---- Providers ----
+@router.get("/providers/health-board")
+async def provider_health_board(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+                                user=Depends(get_current_user)):
+    """Operator health board: per-environment account health, routing eligibility, metrics,
+    recent errors + failovers. Never exposes credentials/secrets. Tenant-isolated."""
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    return await provider_health_svc.health_board(db, tid)
+
+
 @router.get("/providers/available")
 async def available_providers(user=Depends(get_current_user)):
     return list_providers()

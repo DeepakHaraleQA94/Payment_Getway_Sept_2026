@@ -210,6 +210,21 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Verified by the testing agent (frontend-only, 100%): failover payment shows attempt #1 mock
   (failed/card_declined) then #2 examplepsp (succeeded); direct payment shows the empty-state note.
 
+## Provider Health Board (2026-06)
+- New operator-facing "Provider Health" screen (+ nav item, route /dashboard/provider-health) and
+  read-only endpoint GET /api/providers/health-board?tenant_id=... (`app/services/provider_health.py`).
+- Per tenant, clearly separated Sandbox and Live sections. Each provider account card shows:
+  enabled/disabled, live health status, priority, routing eligibility (consistent with the
+  routing engine), success/failure metrics + success rate, recent provider errors, last-payment
+  time, a live health-check timestamp, and a credentials indicator (boolean only).
+- A "Recent Failover Activity" list per environment shows which providers were tried (mock → examplepsp).
+- Integrates with Routing & Failover (eligibility uses the same enabled+registered+env-supported+
+  healthy rule); auto-refreshes every 15s.
+- Security: NEVER exposes credentials, secret values, or credential references (only has_credentials
+  bool). Tenant-isolated via resolve_tenant_id.
+- Tests: 136 backend tests pass serially; new health-board tests (accounts/metrics/failovers,
+  no-credential-leak, tenant scoping). Verified live in the UI on Acme with real demo data.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

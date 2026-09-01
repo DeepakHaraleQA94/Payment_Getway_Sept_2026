@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Building2, CreditCard, Undo2, Plug, Percent,
   BookOpen, Banknote, Users, ToggleLeft, ScrollText, Activity, Zap, LogOut,
-  Link2, KeyRound, Webhook, FileText, ShieldCheck,
+  Link2, KeyRound, Webhook, FileText, ShieldCheck, HeartPulse,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -21,6 +21,7 @@ const NAV = [
   { to: "/dashboard/webhooks", label: "Webhooks", icon: Webhook, testid: "nav-webhooks" },
   { to: "/dashboard/reports", label: "Reports", icon: FileText, testid: "nav-reports" },
   { to: "/dashboard/providers", label: "Providers", icon: Plug, testid: "nav-providers" },
+  { to: "/dashboard/provider-health", label: "Provider Health", icon: HeartPulse, testid: "nav-provider-health" },
   { to: "/dashboard/fees", label: "Fee Engine", icon: Percent, testid: "nav-fees" },
   { to: "/dashboard/tenants", label: "Tenants", icon: Building2, testid: "nav-tenants" },
   { to: "/dashboard/access", label: "Access Control", icon: Users, testid: "nav-access" },
