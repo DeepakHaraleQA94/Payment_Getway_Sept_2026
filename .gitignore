@@ -82,3 +82,9 @@ memory/test_credentials.md
 android-sdk/frontend/node_modules/.cache/default-development/3.pack
 frontend/node_modules/.cache/default-development/8.pack
 frontend/node_modules/.cache/default-development/3.pack
+.env
+.env.*
+*.env
+credentials.json
+*.key
+.credentials
