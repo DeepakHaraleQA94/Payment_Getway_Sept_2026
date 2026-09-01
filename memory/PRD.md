@@ -249,6 +249,24 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Verified via screenshot on preview (tenant "Empty Co": clean render, no `)}`, banner hidden
   when zero alerts). No unrelated functionality changed.
 
+## Weekly/Monthly Reports + Alert Recovery Log (2026-06)
+- Scheduled Reports now support DAILY, WEEKLY and MONTHLY summaries (payments + settlements CSV).
+  Daily = the report's day; weekly = trailing 7 days (Mon-Sun when run on Monday); monthly = the
+  previous calendar month. `report_generation.generate_report(report_type=...)` computes the window;
+  `generate_daily_report` kept as a wrapper. Scheduler adds weekly (Mon 08:05) + monthly (1st 08:10)
+  cron jobs alongside the daily 08:00 job. `POST /api/reports/scheduled/run?report_type=` (validated).
+  Reports UI adds a Daily/Weekly/Monthly selector next to "Run report now".
+- Provider Alert Recovery Log: new append-only `provider_alert_events` table (migration f4b2e8a1c530)
+  records every alert transition (fired/recovered) with provider_key, environment, severity, reason,
+  success_rate and timestamp. `alert_service.evaluate_tenant` writes an event on each transition;
+  `GET /api/providers/alerts/history?tenant_id=&limit=` returns recent transitions (never secrets).
+  Provider Health page shows an "Alert Recovery Log" panel with ALERTING/RECOVERED entries.
+- Checkout Branding (tenant logo + accent) was already fully implemented (files.py + Checkout.jsx
+  branding panel + CheckoutPage applies it); verified still working — no changes needed.
+- Tests: 145 backend tests pass serially (`pytest tests/ -n0`); new test_reports_and_alert_history.py
+  (period window unit, weekly/monthly run, invalid type 400, history fire+recover, no-secret-leak).
+  Testing agent: frontend 100%, no issues (both new flows validated on Acme).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

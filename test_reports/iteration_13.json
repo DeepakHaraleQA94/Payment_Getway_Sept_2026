@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only validation of two new features: (1) Scheduled Reports weekly/monthly report types and (2) Provider Health Alert Recovery Log. Both features work end-to-end. Logged in as super admin, generated a weekly and a monthly report on /dashboard/reports (rows appeared with correct type labels and CSV download buttons). On /dashboard/provider-health, alert-recovery-log panel renders; default tenant shows alert-history-empty state and no alerts-banner; switching ACTIVE TENANT to Acme Commerce shows 2 alert-history entries (WARNING drop + RECOVERED for provider key 'mock', sandbox env, with timestamps) and the alerts-banner appears because there is 1 active alert. No stray ')}' artifact anywhere on the page.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Reports.jsx: the StatusBadge status='active' is hardcoded regardless of the row's report_type/status — visually it just labels every row 'active'. Minor cosmetic; consider using r.status if the API returns one.",
+    "ProviderHealth.jsx: load() runs a 15s polling interval and fires 4 parallel requests each tick per open tab. Fine for now but worth debouncing / pausing on hidden tabs."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@cloudpay.io / Admin@12345 (super admin). Tenant switched via [data-testid=tenant-selector] -> Acme Commerce for populated recovery log.",
+  "seed_data_creation": "Generated 1 weekly and 1 monthly scheduled report on the default (Empty Co) tenant during testing.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reports page: report-type-select dropdown with items report-type-daily/weekly/monthly; run-report-button posts /api/reports/scheduled/run?report_type=... . Rows carry data-testid report-row-<id> and download-report-<id>. Provider Health: alert-recovery-log panel at bottom; empty state uses alert-history-empty; populated entries use alert-history-<id>. Use tenant selector data-testid='tenant-selector' and pick 'Acme Commerce' to see populated history + alerts-banner."
+}

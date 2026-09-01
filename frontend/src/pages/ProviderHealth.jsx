@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff, BellRing, RefreshCw } from "lucide-react";
+import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff, BellRing, RefreshCw, History, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -138,20 +138,23 @@ export default function ProviderHealth() {
   const { selectedTenantId } = useAuth();
   const [data, setData] = useState(null);
   const [alerts, setAlerts] = useState([]);
+  const [history, setHistory] = useState([]);
   const [checking, setChecking] = useState(false);
   const [thresholds, setThresholds] = useState({ success_rate_threshold: 0.5, min_sample: 5 });
   const [savingCfg, setSavingCfg] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
-    const [board, al, cfg] = await Promise.all([
+    const [board, al, cfg, hist] = await Promise.all([
       api.get("/providers/health-board", { params: { tenant_id: selectedTenantId } }),
       api.get("/providers/alerts", { params: { tenant_id: selectedTenantId } }),
       api.get("/providers/alerts/settings", { params: { tenant_id: selectedTenantId } }),
+      api.get("/providers/alerts/history", { params: { tenant_id: selectedTenantId, limit: 30 } }),
     ]);
     setData(board.data);
     setAlerts(al.data);
     setThresholds(cfg.data);
+    setHistory(hist.data);
   }, [selectedTenantId]);
 
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
@@ -253,6 +256,48 @@ export default function ProviderHealth() {
 
       <EnvSection env="sandbox" data={envs.sandbox} alertKeys={alertKeys} />
       <EnvSection env="live" data={envs.live} alertKeys={alertKeys} />
+
+      <div className="mt-2" data-testid="alert-recovery-log">
+        <div className="flex items-center gap-2 mb-3">
+          <History className="h-4 w-4 text-primary" />
+          <h3 className="font-heading text-lg font-medium">Alert Recovery Log</h3>
+          <span className="text-[11px] font-mono text-muted-foreground">recent provider drops & recoveries</span>
+        </div>
+        <Panel className="p-0 overflow-hidden">
+          {history.length === 0 ? (
+            <EmptyState message="No provider alerts have fired yet. Drops and recoveries will appear here." testid="alert-history-empty" />
+          ) : (
+            <ul className="divide-y divide-border">
+              {history.map((h) => {
+                const recovered = h.transition === "recovered";
+                return (
+                  <li key={h.id} data-testid={`alert-history-${h.id}`}
+                    className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+                        recovered
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : (h.severity === "critical"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-amber-500/10 text-amber-400 border-amber-500/20")
+                      }`}>
+                        {recovered ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                        {recovered ? "RECOVERED" : (h.severity || "alert").toUpperCase()}
+                      </span>
+                      <span className="font-mono text-[12px] font-semibold truncate">{h.provider_key}</span>
+                      <span className="text-[11px] font-mono text-muted-foreground">{h.environment}</span>
+                      <span className="text-[12px] text-muted-foreground truncate hidden sm:inline">— {h.reason}</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+                      {new Date(h.at).toLocaleString()}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

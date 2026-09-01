@@ -31,17 +31,21 @@ async def list_reports(tenant_id: str | None = None, db: AsyncSession = Depends(
 
 
 @router.post("/run")
-async def run_now(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+async def run_now(tenant_id: str | None = None, report_type: str = "daily",
+                  db: AsyncSession = Depends(get_db),
                   user=Depends(require_permission("report.manage"))):
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    if report_type not in report_generation.VALID_TYPES:
+        raise HTTPException(status_code=400, detail="report_type must be daily, weekly or monthly")
     tenant = await db.get(Tenant, tid)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    report = await report_generation.generate_daily_report(db, tenant=tenant)
+    report = await report_generation.generate_report(db, tenant=tenant, report_type=report_type)
     await db.commit()
-    return {"id": str(report.id), "payments_count": report.payments_count,
+    return {"id": str(report.id), "report_type": report.report_type,
+            "payments_count": report.payments_count,
             "settlements_count": report.settlements_count, "email_status": report.email_status,
             "file_id": str(report.file_id) if report.file_id else None}
 

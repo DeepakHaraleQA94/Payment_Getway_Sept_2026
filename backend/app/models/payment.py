@@ -86,6 +86,30 @@ class ProviderAlert(UUIDPkMixin, TimestampMixin, Base):
     )
 
 
+class ProviderAlertEvent(UUIDPkMixin, TimestampMixin, Base):
+    """Append-only history of provider alert transitions (fired / recovered).
+
+    One row per state change so operators can review how often and when a provider dropped
+    and recovered. Never stores credentials/secrets.
+    """
+    __tablename__ = "provider_alert_events"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider_account_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    provider_key: Mapped[str] = mapped_column(String(60), nullable=False)
+    environment: Mapped[str] = mapped_column(String(20), nullable=False)
+    transition: Mapped[str] = mapped_column(String(20), nullable=False)  # alerting | recovered
+    severity: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    success_rate: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+
+    __table_args__ = (
+        Index("ix_provider_alert_events_tenant_created", "tenant_id", "created_at"),
+    )
+
+
 class Payment(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     __tablename__ = "payments"
 

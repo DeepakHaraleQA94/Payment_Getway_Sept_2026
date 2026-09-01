@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.models.payment import PaymentProvider, ProviderAlert
+from app.models.payment import PaymentProvider, ProviderAlert, ProviderAlertEvent
 from app.models.tenant import Tenant
 from app.services import email_service, provider_health, webhook_service
 
@@ -104,6 +104,10 @@ async def evaluate_tenant(db, tenant_id) -> dict:
             if bad and row.status != "alerting":
                 row.status, row.severity, row.reason, row.last_alert_at = "alerting", severity, reason, now
                 await _notify(db, tenant_id, acc, "provider.health_alert", severity, reason)
+                db.add(ProviderAlertEvent(
+                    tenant_id=tenant_id, provider_account_id=acc["id"], provider_key=acc["provider_key"],
+                    environment=env, transition="alerting", severity=severity, reason=reason,
+                    success_rate=acc["metrics"].get("success_rate")))
                 changes.append({"provider_key": acc["provider_key"], "environment": env,
                                 "transition": "alerting", "severity": severity, "reason": reason})
             elif bad and row.status == "alerting":
@@ -111,6 +115,10 @@ async def evaluate_tenant(db, tenant_id) -> dict:
             elif not bad and row.status == "alerting":
                 row.status, row.severity, row.reason = "ok", None, "recovered"
                 await _notify(db, tenant_id, acc, "provider.recovered", None, None)
+                db.add(ProviderAlertEvent(
+                    tenant_id=tenant_id, provider_account_id=acc["id"], provider_key=acc["provider_key"],
+                    environment=env, transition="recovered", severity=None, reason="recovered to healthy",
+                    success_rate=acc["metrics"].get("success_rate")))
                 changes.append({"provider_key": acc["provider_key"], "environment": env,
                                 "transition": "recovered"})
             if row.status == "alerting":
@@ -128,6 +136,18 @@ async def list_active(db, tenant_id) -> list[dict]:
     return [{"provider_account_id": str(r.provider_account_id), "provider_key": r.provider_key,
              "environment": r.environment, "severity": r.severity, "reason": r.reason,
              "since": r.last_alert_at.isoformat() if r.last_alert_at else None} for r in rows]
+
+
+async def list_history(db, tenant_id, limit: int = 50) -> list[dict]:
+    """Recent provider alert transitions (fired/recovered) for the tenant, newest first."""
+    rows = (await db.execute(
+        select(ProviderAlertEvent).where(ProviderAlertEvent.tenant_id == tenant_id)
+        .order_by(ProviderAlertEvent.created_at.desc()).limit(limit))).scalars().all()
+    return [{"id": str(r.id), "provider_account_id": str(r.provider_account_id),
+             "provider_key": r.provider_key, "environment": r.environment,
+             "transition": r.transition, "severity": r.severity, "reason": r.reason,
+             "success_rate": float(r.success_rate) if r.success_rate is not None else None,
+             "at": r.created_at.isoformat()} for r in rows]
 
 
 async def evaluate_all(db) -> int:

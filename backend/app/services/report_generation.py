@@ -1,4 +1,9 @@
-"""Daily report generation: build CSV (payments + settlements), store it, notify (adapter)."""
+"""Report generation: build CSV (payments + settlements) for a period, store it, notify (adapter).
+
+Supports daily, weekly and monthly reports. Daily covers the report's own calendar day; weekly
+covers the trailing 7 days (Mon-Sun when run on a Monday); monthly covers the previous calendar
+month. The window start is stored as the report's period_date.
+"""
 import csv
 import io
 import logging
@@ -18,15 +23,38 @@ from app.services import email_service
 
 logger = logging.getLogger("cloudpay.reports")
 
+VALID_TYPES = ("daily", "weekly", "monthly")
+
 
 def _fmt(minor: int) -> str:
     return f"{(minor or 0) / 100:.2f}"
 
 
-async def generate_daily_report(db: AsyncSession, *, tenant: Tenant, period_date: datetime | None = None) -> ScheduledReport:
-    day = (period_date or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    start = datetime.combine(day.date(), time.min, tzinfo=timezone.utc)
-    end = start + timedelta(days=1)
+def _period_window(report_type: str, period_date: datetime | None) -> tuple[datetime, datetime, str]:
+    """Return (start, end, label) for the report window. `start` is stored as period_date."""
+    d = (period_date or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    midnight = datetime.combine(d.date(), time.min, tzinfo=timezone.utc)
+    if report_type == "weekly":
+        start = midnight - timedelta(days=7)
+        end = midnight
+        label = f"{start.date().isoformat()} → {(end - timedelta(days=1)).date().isoformat()}"
+    elif report_type == "monthly":
+        first_this = midnight.replace(day=1)
+        start = (first_this - timedelta(days=1)).replace(day=1)
+        end = first_this
+        label = start.strftime("%B %Y")
+    else:  # daily
+        start = midnight
+        end = midnight + timedelta(days=1)
+        label = start.date().isoformat()
+    return start, end, label
+
+
+async def generate_report(db: AsyncSession, *, tenant: Tenant, report_type: str = "daily",
+                          period_date: datetime | None = None) -> ScheduledReport:
+    if report_type not in VALID_TYPES:
+        raise ValueError(f"invalid report_type: {report_type}")
+    start, end, label = _period_window(report_type, period_date)
 
     pay_res = await db.execute(
         select(Payment).where(Payment.tenant_id == tenant.id,
@@ -43,7 +71,7 @@ async def generate_daily_report(db: AsyncSession, *, tenant: Tenant, period_date
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([f"CloudPay Daily Report — {tenant.name}", day.date().isoformat()])
+    w.writerow([f"CloudPay {report_type.capitalize()} Report — {tenant.name}", label])
     w.writerow([])
     w.writerow(["PAYMENTS"])
     w.writerow(["reference", "status", "amount", "fee", "net", "currency", "customer_email", "created_at"])
@@ -58,7 +86,7 @@ async def generate_daily_report(db: AsyncSession, *, tenant: Tenant, period_date
                     s.currency, s.txn_count, s.created_at.isoformat()])
     content = buf.getvalue().encode("utf-8")
 
-    filename = f"cloudpay_report_{tenant.slug}_{day.date().isoformat()}.csv"
+    filename = f"cloudpay_{report_type}_{tenant.slug}_{start.date().isoformat()}.csv"
     stored_file = None
     try:
         path = f"{APP_NAME}/reports/{tenant.id}/{uuid.uuid4()}.csv"
@@ -74,13 +102,13 @@ async def generate_daily_report(db: AsyncSession, *, tenant: Tenant, period_date
     # Provider-agnostic email adapter (noop until a provider is configured).
     email_result = email_service.send_email(
         to=tenant.contact_email,
-        subject=f"CloudPay daily report — {day.date().isoformat()}",
-        body=f"Your daily payments & settlements report for {tenant.name} is ready.",
+        subject=f"CloudPay {report_type} report — {label}",
+        body=f"Your {report_type} payments & settlements report for {tenant.name} ({label}) is ready.",
         attachment_url=(f"/api/reports/scheduled/download/{stored_file.id}" if stored_file else None),
     )
 
     report = ScheduledReport(
-        tenant_id=tenant.id, period_date=start, report_type="daily",
+        tenant_id=tenant.id, period_date=start, report_type=report_type,
         file_id=stored_file.id if stored_file else None,
         recipient_email=tenant.contact_email,
         email_status=email_result.get("status", "skipped_no_provider"),
@@ -89,19 +117,24 @@ async def generate_daily_report(db: AsyncSession, *, tenant: Tenant, period_date
     db.add(report)
     await record_audit(db, action="report.generate", resource_type="scheduled_report",
                        resource_id=report.id, tenant_id=tenant.id,
-                       changes={"payments": len(payments), "settlements": len(settlements),
-                                "email_status": report.email_status})
+                       changes={"report_type": report_type, "payments": len(payments),
+                                "settlements": len(settlements), "email_status": report.email_status})
     await db.flush()
     return report
 
 
-async def generate_for_all_tenants(db: AsyncSession) -> int:
+async def generate_daily_report(db: AsyncSession, *, tenant: Tenant,
+                                period_date: datetime | None = None) -> ScheduledReport:
+    return await generate_report(db, tenant=tenant, report_type="daily", period_date=period_date)
+
+
+async def generate_for_all_tenants(db: AsyncSession, report_type: str = "daily") -> int:
     res = await db.execute(select(Tenant).where(Tenant.status == "active", Tenant.is_platform.is_(False)))
     tenants = res.scalars().all()
     for tenant in tenants:
         try:
-            await generate_daily_report(db, tenant=tenant)
+            await generate_report(db, tenant=tenant, report_type=report_type)
         except Exception as exc:
-            logger.error("daily report failed for tenant=%s: %s", tenant.id, exc)
+            logger.error("%s report failed for tenant=%s: %s", report_type, tenant.id, exc)
     await db.commit()
     return len(tenants)
