@@ -225,6 +225,23 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Tests: 136 backend tests pass serially; new health-board tests (accounts/metrics/failovers,
   no-credential-leak, tenant scoping). Verified live in the UI on Acme with real demo data.
 
+## Provider Health Alerts (2026-06)
+- Operators are now notified when a provider account turns unhealthy or its success rate drops
+  below a threshold. Evaluation reuses the Provider Health Board metrics.
+- Thresholds via env: ALERT_SUCCESS_RATE_THRESHOLD (0.5), ALERT_MIN_SAMPLE (5), optional
+  ALERT_EMAIL_TO. Rule: enabled account with health != up -> critical; or (total >= min_sample
+  and success_rate < threshold) -> warning. Disabled/low-sample accounts are not alerted.
+- Notifications reuse existing abstractions (no new dependency): email via email_service (noop by
+  default) + an outbound webhook event (provider.health_alert / provider.recovered). Deduped:
+  fires once on healthy->unhealthy, sends a recovery notice on unhealthy->healthy.
+- State persisted in new `provider_alerts` table (migration e3a1c7d9f042), unique per account.
+- Endpoints: POST /api/providers/alerts/evaluate (provider.manage), GET /api/providers/alerts.
+  Scheduler runs evaluate_all every 60s. Never exposes credentials/secrets.
+- Frontend: Provider Health page shows an active-alerts banner, per-card ALERT badges, and a
+  "Check health now" button; auto-refreshes.
+- Tests: 139 backend tests pass serially; new test_provider_alerts.py (threshold rules, fire/
+  dedupe/recover, no-secret-leak). Verified live in the UI on Acme (mock 46% -> warning alert).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

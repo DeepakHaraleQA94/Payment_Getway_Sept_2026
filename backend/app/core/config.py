@@ -63,6 +63,11 @@ class Settings:
         # Secret store backend selector. 'encrypted_db' now; 'aws_kms'/'vault'/etc. pluggable later.
         self.secret_store_backend: str = os.environ.get("SECRET_STORE_BACKEND", "encrypted_db")
 
+        # Provider health alerting thresholds + optional operator email recipient.
+        self.alert_success_rate_threshold: float = float(os.environ.get("ALERT_SUCCESS_RATE_THRESHOLD", "0.5"))
+        self.alert_min_sample: int = int(os.environ.get("ALERT_MIN_SAMPLE", "5"))
+        self.alert_email_to: str = os.environ.get("ALERT_EMAIL_TO", "")
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

@@ -64,6 +64,28 @@ class ProviderSecret(UUIDPkMixin, TimestampMixin, Base):
     )
 
 
+class ProviderAlert(UUIDPkMixin, TimestampMixin, Base):
+    """Current health-alert state per provider account (dedupes notifications)."""
+    __tablename__ = "provider_alerts"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider_account_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    provider_key: Mapped[str] = mapped_column(String(60), nullable=False)
+    environment: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok")  # ok | alerting
+    severity: Mapped[str | None] = mapped_column(String(20), nullable=True)  # warning | critical
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    success_rate: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_alert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("provider_account_id", name="uq_provider_alert_account"),
+    )
+
+
 class Payment(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     __tablename__ = "payments"
 

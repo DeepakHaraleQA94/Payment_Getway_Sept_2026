@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
-import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff } from "lucide-react";
+import { Activity, GitBranch, CheckCircle2, XCircle, ShieldCheck, ShieldOff, BellRing, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, EmptyState } from "@/components/common";
 
@@ -9,11 +11,11 @@ function HealthDot({ status }) {
   return <span className={`h-2 w-2 rounded-full ${up ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />;
 }
 
-function AccountCard({ a }) {
+function AccountCard({ a, alerting }) {
   const m = a.metrics || {};
   const rate = m.success_rate != null ? `${Math.round(m.success_rate * 100)}%` : "—";
   return (
-    <Panel data-testid={`health-account-${a.id}`} className="cp-anim">
+    <Panel data-testid={`health-account-${a.id}`} className={`cp-anim ${alerting ? "ring-1 ring-amber-500/40" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <HealthDot status={a.health_status} />
@@ -22,17 +24,25 @@ function AccountCard({ a }) {
             <p className="font-mono text-[11px] text-muted-foreground">{a.provider_key}</p>
           </div>
         </div>
-        <span
-          data-testid={`health-eligible-${a.id}`}
-          className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
-            a.routing_eligible
-              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-              : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-          }`}
-        >
-          {a.routing_eligible ? <ShieldCheck className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
-          {a.routing_eligible ? "ELIGIBLE" : "INELIGIBLE"}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {alerting && (
+            <span data-testid={`health-alert-badge-${a.id}`}
+              className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20">
+              <BellRing className="h-3 w-3" /> ALERT
+            </span>
+          )}
+          <span
+            data-testid={`health-eligible-${a.id}`}
+            className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+              a.routing_eligible
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+            }`}
+          >
+            {a.routing_eligible ? <ShieldCheck className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
+            {a.routing_eligible ? "ELIGIBLE" : "INELIGIBLE"}
+          </span>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-[11px]">
@@ -71,7 +81,7 @@ function AccountCard({ a }) {
   );
 }
 
-function EnvSection({ env, data }) {
+function EnvSection({ env, data, alertKeys }) {
   const accounts = data?.accounts || [];
   const failovers = data?.recent_failovers || [];
   const isLive = env === "live";
@@ -87,7 +97,7 @@ function EnvSection({ env, data }) {
         <EmptyState message={`No ${env} provider accounts configured.`} testid={`health-empty-${env}`} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {accounts.map((a) => <AccountCard key={a.id} a={a} />)}
+          {accounts.map((a) => <AccountCard key={a.id} a={a} alerting={alertKeys?.has(a.id)} />)}
         </div>
       )}
 
@@ -125,26 +135,74 @@ function EnvSection({ env, data }) {
 export default function ProviderHealth() {
   const { selectedTenantId } = useAuth();
   const [data, setData] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
-    const { data } = await api.get("/providers/health-board", { params: { tenant_id: selectedTenantId } });
-    setData(data);
+    const [board, al] = await Promise.all([
+      api.get("/providers/health-board", { params: { tenant_id: selectedTenantId } }),
+      api.get("/providers/alerts", { params: { tenant_id: selectedTenantId } }),
+    ]);
+    setData(board.data);
+    setAlerts(al.data);
   }, [selectedTenantId]);
 
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
 
+  const checkNow = async () => {
+    setChecking(true);
+    try {
+      const { data } = await api.post("/providers/alerts/evaluate", null, { params: { tenant_id: selectedTenantId } });
+      const fired = (data.changes || []).filter((c) => c.transition === "alerting").length;
+      const recovered = (data.changes || []).filter((c) => c.transition === "recovered").length;
+      toast.success(`Evaluated · ${data.active_alerts.length} active` +
+        (fired ? ` · ${fired} new` : "") + (recovered ? ` · ${recovered} recovered` : ""));
+      load();
+    } catch (e) {
+      toast.error("Evaluation failed");
+    } finally { setChecking(false); }
+  };
+
   const envs = data?.environments || {};
+  const alertKeys = new Set(alerts.map((a) => a.provider_account_id));
 
   return (
     <div data-testid="provider-health-page">
       <PageHeader
         title="Provider Health"
         subtitle="Live provider account health, routing eligibility, metrics and failover activity."
-        action={<span className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground"><Activity className="h-3.5 w-3.5" /> auto-refresh 15s</span>}
+        action={
+          <Button size="sm" variant="outline" onClick={checkNow} disabled={checking} data-testid="alerts-check-now">
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${checking ? "animate-spin" : ""}`} /> Check health now
+          </Button>
+        }
       />
-      <EnvSection env="sandbox" data={envs.sandbox} />
-      <EnvSection env="live" data={envs.live} />
+
+      {alerts.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4" data-testid="alerts-banner">
+          <div className="flex items-center gap-2 mb-2 text-amber-400 text-sm font-medium">
+            <BellRing className="h-4 w-4" /> {alerts.length} active provider alert{alerts.length > 1 ? "s" : ""}
+          </div>
+          <ul className="space-y-1">
+            {alerts.map((a) => (
+              <li key={a.provider_account_id} data-testid={`alert-${a.provider_account_id}`}
+                className="flex items-center justify-between font-mono text-[11px]">
+                <span>
+                  <span className={`px-1.5 py-0.5 rounded mr-2 ${a.severity === "critical" ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"}`}>
+                    {(a.severity || "").toUpperCase()}
+                  </span>
+                  <span className="font-semibold">{a.provider_key}</span> · {a.environment} — {a.reason}
+                </span>
+                <span className="text-muted-foreground">{a.since ? new Date(a.since).toLocaleTimeString() : ""}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <EnvSection env="sandbox" data={envs.sandbox} alertKeys={alertKeys} />
+      <EnvSection env="live" data={envs.live} alertKeys={alertKeys} />
     </div>
   );
 }

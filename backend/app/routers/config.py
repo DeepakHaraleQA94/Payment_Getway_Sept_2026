@@ -26,6 +26,7 @@ from app.schemas import (
     ProviderUpdate,
 )
 from app.services import payment_state
+from app.services import alert_service
 from app.services import provider_health as provider_health_svc
 from app.services.secret_store import get_secret_store
 
@@ -100,6 +101,26 @@ async def provider_health_board(tenant_id: str | None = None, db: AsyncSession =
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
     return await provider_health_svc.health_board(db, tid)
+
+
+@router.get("/providers/alerts")
+async def list_provider_alerts(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+                               user=Depends(get_current_user)):
+    """Current active provider health alerts for the tenant (no credentials/secrets)."""
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    return await alert_service.list_active(db, tid)
+
+
+@router.post("/providers/alerts/evaluate")
+async def evaluate_provider_alerts(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+                                   user=Depends(require_permission("provider.manage"))):
+    """Evaluate health/success-rate thresholds now; fires email+webhook notices on transitions."""
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    return await alert_service.evaluate_tenant(db, tid)
 
 
 @router.get("/providers/available")

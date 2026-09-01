@@ -1,0 +1,106 @@
+"""Provider health alerting (provider-agnostic).
+
+Evaluates each provider account against health + success-rate thresholds and notifies operators
+via the existing email + outbound-webhook abstractions on state transitions (dedupe: alert once
+per healthy->unhealthy transition; send a recovery notice on unhealthy->healthy). Reuses the
+Provider Health Board computation so thresholds stay consistent with routing eligibility.
+"""
+import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+
+from app.core.config import settings
+from app.models.payment import PaymentProvider, ProviderAlert
+from app.services import email_service, provider_health, webhook_service
+
+logger = logging.getLogger("cloudpay.alerts")
+
+
+def _evaluate_account(acc: dict) -> tuple[bool, str | None, str | None]:
+    """Return (is_bad, severity, reason) for a health-board account entry."""
+    if not acc["enabled"]:
+        return False, None, None  # operator-disabled accounts are not alerted
+    if acc["health_status"] != "up":
+        return True, "critical", f"health status is '{acc['health_status']}'"
+    m = acc["metrics"]
+    rate = m.get("success_rate")
+    if m.get("total", 0) >= settings.alert_min_sample and rate is not None \
+            and rate < settings.alert_success_rate_threshold:
+        pct = round(rate * 100)
+        thr = round(settings.alert_success_rate_threshold * 100)
+        return True, "warning", f"success rate {pct}% below threshold {thr}% ({m['succeeded']}/{m['total']})"
+    return False, None, None
+
+
+async def _notify(db, tenant_id, acc, event: str, severity, reason):
+    subject = f"[CloudPay] Provider {'RECOVERED' if event == 'provider.recovered' else 'ALERT'}: " \
+              f"{acc['display_name']} ({acc['environment']})"
+    body = (f"Provider account: {acc['provider_key']} ({acc['display_name']})\n"
+            f"Environment: {acc['environment']}\nSeverity: {severity or 'info'}\n"
+            f"Reason: {reason or 'recovered to healthy'}\n"
+            f"Success rate: {acc['metrics'].get('success_rate')}\n")
+    email_service.send_email(to=settings.alert_email_to or None, subject=subject, body=body)
+    # Outbound webhook to any subscribed tenant endpoints (no-op if none configured). No secrets.
+    await webhook_service.dispatch(db, tenant_id=tenant_id, event=event, data={
+        "provider_account_id": acc["id"], "provider_key": acc["provider_key"],
+        "environment": acc["environment"], "severity": severity, "reason": reason,
+        "health_status": acc["health_status"], "success_rate": acc["metrics"].get("success_rate"),
+    })
+
+
+async def evaluate_tenant(db, tenant_id) -> dict:
+    board = await provider_health.health_board(db, tenant_id)
+    now = datetime.now(timezone.utc)
+    existing = {str(r.provider_account_id): r for r in (await db.execute(
+        select(ProviderAlert).where(ProviderAlert.tenant_id == tenant_id))).scalars().all()}
+
+    changes: list[dict] = []
+    active: list[dict] = []
+    for env in ("sandbox", "live"):
+        for acc in board["environments"][env]["accounts"]:
+            bad, severity, reason = _evaluate_account(acc)
+            row = existing.get(acc["id"])
+            if row is None:
+                row = ProviderAlert(tenant_id=tenant_id, provider_account_id=acc["id"],
+                                    provider_key=acc["provider_key"], environment=env, status="ok")
+                db.add(row)
+            row.last_evaluated_at = now
+            row.success_rate = acc["metrics"].get("success_rate")
+            if bad and row.status != "alerting":
+                row.status, row.severity, row.reason, row.last_alert_at = "alerting", severity, reason, now
+                await _notify(db, tenant_id, acc, "provider.health_alert", severity, reason)
+                changes.append({"provider_key": acc["provider_key"], "environment": env,
+                                "transition": "alerting", "severity": severity, "reason": reason})
+            elif bad and row.status == "alerting":
+                row.severity, row.reason = severity, reason  # keep current, no re-notify
+            elif not bad and row.status == "alerting":
+                row.status, row.severity, row.reason = "ok", None, "recovered"
+                await _notify(db, tenant_id, acc, "provider.recovered", None, None)
+                changes.append({"provider_key": acc["provider_key"], "environment": env,
+                                "transition": "recovered"})
+            if row.status == "alerting":
+                active.append({"provider_account_id": acc["id"], "provider_key": acc["provider_key"],
+                               "environment": env, "severity": row.severity, "reason": row.reason,
+                               "since": row.last_alert_at.isoformat() if row.last_alert_at else None})
+    await db.commit()
+    return {"tenant_id": str(tenant_id), "active_alerts": active, "changes": changes,
+            "evaluated_at": now.isoformat()}
+
+
+async def list_active(db, tenant_id) -> list[dict]:
+    rows = (await db.execute(select(ProviderAlert).where(
+        ProviderAlert.tenant_id == tenant_id, ProviderAlert.status == "alerting"))).scalars().all()
+    return [{"provider_account_id": str(r.provider_account_id), "provider_key": r.provider_key,
+             "environment": r.environment, "severity": r.severity, "reason": r.reason,
+             "since": r.last_alert_at.isoformat() if r.last_alert_at else None} for r in rows]
+
+
+async def evaluate_all(db) -> int:
+    tenant_ids = (await db.execute(select(PaymentProvider.tenant_id).distinct())).scalars().all()
+    for tid in tenant_ids:
+        try:
+            await evaluate_tenant(db, tid)
+        except Exception as exc:  # pragma: no cover
+            logger.error("alert evaluation failed for tenant %s: %s", tid, exc)
+    return len(tenant_ids)

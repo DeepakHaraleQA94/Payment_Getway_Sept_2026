@@ -6,7 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.database import AsyncSessionLocal
-from app.services import report_generation, webhook_service
+from app.services import alert_service, report_generation, webhook_service
 
 logger = logging.getLogger("cloudpay.scheduler")
 
@@ -32,6 +32,15 @@ async def _daily_report_job():
             logger.error("daily report job failed: %s", exc)
 
 
+async def _alert_eval_job():
+    async with AsyncSessionLocal() as db:
+        try:
+            n = await alert_service.evaluate_all(db)
+            logger.debug("evaluated provider health alerts for %s tenants", n)
+        except Exception as exc:
+            logger.error("alert evaluation job failed: %s", exc)
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -41,5 +50,7 @@ def start_scheduler() -> None:
                        replace_existing=True, max_instances=1, coalesce=True)
     _scheduler.add_job(_daily_report_job, CronTrigger(hour=8, minute=0), id="daily_reports",
                        replace_existing=True, max_instances=1, coalesce=True)
+    _scheduler.add_job(_alert_eval_job, IntervalTrigger(seconds=60), id="provider_alerts",
+                       replace_existing=True, max_instances=1, coalesce=True)
     _scheduler.start()
-    logger.info("scheduler started (webhook retries 30s, daily reports 08:00 UTC)")
+    logger.info("scheduler started (webhook retries 30s, alerts 60s, daily reports 08:00 UTC)")
