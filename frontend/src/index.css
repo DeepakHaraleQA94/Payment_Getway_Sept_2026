@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 218 40% 6%;
+        --foreground: 210 40% 98%;
+        --card: 221 39% 11%;
+        --card-foreground: 210 40% 98%;
+        --popover: 221 39% 11%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 217 91% 60%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 215 28% 17%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 215 28% 17%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 239 84% 67%;
+        --accent-foreground: 210 40% 98%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217 33% 17%;
+        --input: 217 33% 17%;
+        --ring: 217 91% 60%;
+        --chart-1: 217 91% 60%;
+        --chart-2: 160 84% 39%;
+        --chart-3: 239 84% 67%;
+        --chart-4: 43 96% 56%;
+        --chart-5: 188 94% 43%;
+        --radius: 0.5rem;
+    }
+    .dark { color-scheme: dark; }
+}
+
+@layer base {
+    * { @apply border-border; }
+    html { color-scheme: dark; }
+    body {
+        margin: 0;
+        @apply bg-background text-foreground;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+.font-heading { font-family: 'Outfit', sans-serif; }
+.font-mono, code { font-family: 'JetBrains Mono', monospace; }
+
+.cp-grid-bg {
+    background-image:
+        radial-gradient(circle at 15% 15%, rgba(59,130,246,0.08), transparent 40%),
+        radial-gradient(circle at 85% 0%, rgba(99,102,241,0.08), transparent 35%);
+}
+
+.cp-glass {
+    background: rgba(17, 24, 39, 0.8);
+    backdrop-filter: blur(14px);
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(217 33% 20%); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(217 33% 28%); }
+
+@keyframes cp-fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.cp-anim { animation: cp-fade-up 0.4s ease-out both; }

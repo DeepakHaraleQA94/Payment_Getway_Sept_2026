@@ -1,0 +1,112 @@
+{
+  "brand": {
+    "name": "CloudPay",
+    "tagline": "Enterprise Payment Gateway & Orchestration Engine",
+    "theme": "Dark Mode Default with High-Contrast Fintech Aesthetics",
+    "archetype": "Swiss & Precision Performance Fintech"
+  },
+  "typography": {
+    "heading_font": "Outfit, sans-serif",
+    "body_font": "Inter, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "forbidden_fonts": ["Space Grotesk"],
+    "scale": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-medium",
+      "h4": "text-lg font-medium",
+      "body": "text-sm text-slate-300 leading-relaxed",
+      "caption": "text-xs font-mono uppercase tracking-wider text-slate-400"
+    }
+  },
+  "colors": {
+    "mode": "dark",
+    "base": {
+      "bg_primary": "#0B0F17",
+      "bg_surface": "#111827",
+      "bg_surface_hover": "#1F2937",
+      "border_default": "#1E293B",
+      "border_subtle": "#334155"
+    },
+    "brand": {
+      "primary": "#3B82F6",
+      "primary_hover": "#2563EB",
+      "primary_muted": "rgba(59, 130, 246, 0.15)",
+      "accent": "#6366F1"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "success_bg": "rgba(16, 185, 129, 0.12)",
+      "warning": "#F59E0B",
+      "warning_bg": "rgba(245, 158, 11, 0.12)",
+      "error": "#EF4444",
+      "error_bg": "rgba(239, 68, 68, 0.12)",
+      "info": "#06B6D4"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8",
+      "muted": "#64748B",
+      "mono": "#E2E8F0"
+    }
+  },
+  "layout_and_spacing": {
+    "grid_mode": "High Density Grid (MODE B)",
+    "container_padding": "p-4 sm:p-6 lg:p-8",
+    "card_padding": "p-5 sm:p-6",
+    "gap": "gap-4 md:gap-6",
+    "border_radius": "rounded-lg (max 8px for technical precision)",
+    "rules": [
+      "Containers with borders MUST have internal padding p-5 or p-[1.5rem] to prevent text collisions",
+      "Financial tables and transaction ledgers must use explicit cell padding (py-3 px-4)",
+      "All numeric metrics, currency totals, transaction hashes, and API IDs must render in monospaced font (JetBrains Mono)",
+      "Grid children must be direct children; motion wrappers must carry grid span classes if animated"
+    ]
+  },
+  "visual_enhancers": {
+    "surface_style": "1px sharp border stroke with subtle inner glow + dark matte panels",
+    "glassmorphism": "backdrop-blur-md bg-slate-900/80 border border-slate-800/80 for floating headers and sticky topbars",
+    "charts": "Shadcn Chart / Recharts with semi-transparent area gradients (e.g., blue to transparent) and crisp zero-line borders",
+    "badges": "Pill badges with low-opacity colored backgrounds and high-contrast text (e.g. bg-emerald-500/10 text-emerald-400 border border-emerald-500/20)"
+  },
+  "media": {
+    "image_urls": {
+      "dashboard_hero_bg": "https://images.unsplash.com/photo-1651129518942-21b21bd497e9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1NzZ8MHwxfHNlYXJjaHw0fHxmaW50ZWNoJTIwcGF5bWVudCUyMGRhc2hib2FyZCUyMHNlY3VyaXR5JTIwY3JlZGl0JTIwY2FyZHxlbnwwfHx8fDE3ODgyNTQ5MDR8MA&ixlib=rb-4.1.0&q=85",
+      "card_payment_visual": "https://images.unsplash.com/photo-1609429019995-8c40f49535a5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1NzZ8MHwxfHNlYXJjaHwxfHxmaW50ZWNoJTIwcGF5bWVudCUyMGRhc2hib2FyZCUyMHNlY3VyaXR5JTIwY3JlZGl0JTIwY2FyZHxlbnwwfHx8fDE3ODgyNTQ5MDR8MA&ixlib=rb-4.1.0&q=85",
+      "mobile_payment_checkout": "https://images.unsplash.com/photo-1587906697341-bfbde76785c7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1NzZ8MHwxfHNlYXJjaHwyfHxmaW50ZWNoJTIwcGF5bWVudCUyMGRhc2hib2FyZCUyMHNlY3VyaXR5JTIwY3JlZGl0JTIwY2FyZHxlbnwwfHx8fDE3ODgyNTQ5MDR8MA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "modules_covered": [
+    "Authentication & Authorization (JWT + Google OAuth simulated)",
+    "Tenant & Client Management (Multi-tenant selection & isolation)",
+    "Users, Roles & Permissions Matrix",
+    "Feature Flags Management",
+    "Payment Engine & Provider/Plugin Adapters Config (Stripe, Adyen, PayPal, Crypto)",
+    "Fee Engine & Commission Rules Configurator",
+    "Turnover & Real-Time Balance Ledger View",
+    "Refunds & Reversals Management",
+    "Settlement & Automated Reconciliation",
+    "Risk, Fraud Score, KYC/AML Verification Engine",
+    "FX Engine & Digital Asset / VDA Boundary Control",
+    "Notifications & Webhooks Inspector",
+    "Reports & Exports",
+    "AI / Voice Boundary Prompting Sandbox",
+    "Audit Log Viewer",
+    "System Configuration & Webhook Endpoints",
+    "Health Monitoring & Service Uptime Metrics"
+  ],
+  "accessibility_and_testing": {
+    "testing_attribute": "data-testid",
+    "testing_attribute_format": "kebab-case (e.g. data-testid=\"login-submit-button\", data-testid=\"tenant-selector-dropdown\", data-testid=\"kpi-transaction-volume\")",
+    "contrast_standard": "WCAG AA / APCA compliant (min 4.5:1 text contrast)",
+    "keyboard_navigation": "Explicit visible focus rings (focus:ring-2 focus:ring-blue-500 focus:outline-none)"
+  },
+  "instructions_to_main_agent": [
+    "Ensure the layout feels like a command center: dense, sleek, clean grid panels with subtle slate borders.",
+    "Use Lucide icons (lucide-react) or @phosphor-icons/react for clear visual telemetry.",
+    "Include data-testid on every interactive button, input, tab, select, table row, and metric card.",
+    "Do NOT use Space Grotesk font. Stick to Outfit for headers, Inter for text, and JetBrains Mono for monetary values/IDs.",
+    "Ensure all form interactions use customized Shadcn primitives (Input, Select, Dialog, Sheet, Tabs, Switch, Table, Badge).",
+    "Use Sonner toasts for real-time notifications (payment triggered, key rotated, settlement generated)."
+  ]
+}
