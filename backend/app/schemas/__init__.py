@@ -130,6 +130,10 @@ class ProviderCreate(BaseModel):
     enabled: bool = True
     priority: int = 100
     supported_currencies: list[str] = []
+    # Capability configuration (empty = unrestricted / inherit the plugin's declared default).
+    supported_countries: list[str] = []         # ISO-3166 alpha-2, e.g. ["IN","LK","GB","US"]
+    supported_methods: list[str] = []            # e.g. ["card","upi","bank","wallet"]
+    supported_flows: list[str] = []              # e.g. ["direct","intent","qr"]
     config: dict = {}
     # Optional raw credentials supplied at creation. Stored encrypted in the secret store;
     # only a reference is persisted on the account. NEVER echoed back in any response.
@@ -140,6 +144,10 @@ class ProviderUpdate(BaseModel):
     enabled: bool | None = None
     priority: int | None = None
     display_name: str | None = None
+    supported_currencies: list[str] | None = None
+    supported_countries: list[str] | None = None
+    supported_methods: list[str] | None = None
+    supported_flows: list[str] | None = None
     config: dict | None = None
 
 
@@ -156,6 +164,9 @@ class ProviderOut(ORMBase):
     enabled: bool
     priority: int
     supported_currencies: list
+    supported_countries: list = []
+    supported_methods: list = []
+    supported_flows: list = []
     credentials_ref: str | None = None
     created_at: datetime
 
@@ -167,6 +178,9 @@ class PaymentCreate(BaseModel):
     currency: str = "USD"
     provider_key: str = "mock"
     environment: str = "sandbox"               # explicit execution environment
+    country: str | None = None                 # ISO-3166 alpha-2; falls back to tenant.country
+    payment_method: str = "card"               # card | upi | bank | wallet | ...
+    flow: str = "direct"                        # direct | intent | qr
     description: str | None = None
     customer_email: EmailStr | None = None
     idempotency_key: str | None = None

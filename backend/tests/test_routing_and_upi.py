@@ -149,7 +149,7 @@ def test_auto_routing_no_accounts_errors(admin):
                    json={"reference": "RT-3", "amount_minor": 5000, "currency": "USD",
                          "provider_key": "auto", "environment": "sandbox",
                          "idempotency_key": f"rt-{uuid.uuid4().hex}"})
-    assert r.status_code == 400 and "no healthy provider" in r.text.lower()
+    assert r.status_code == 400 and "no eligible provider" in r.text.lower()
 
 
 # ----------------------------- example provider via routing (HTTP) -----------------------------

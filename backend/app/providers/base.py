@@ -50,6 +50,10 @@ class PaymentProviderAdapter(ABC):
     supported_currencies: list[str] = []
     payment_methods: list[str] = ["card"]
     supported_flows: list[PaymentFlow] = [PaymentFlow.DIRECT]
+    # Countries/regions (ISO-3166 alpha-2) a plugin can serve. Empty = unrestricted (all).
+    # This is a capability the account config may further constrain; the core stays generic
+    # and never hard-codes a country.
+    supported_countries: list[str] = []
     # Environments this plugin can operate in. Both sandbox and live are permanently part of
     # the architecture; a plugin opts into live by including it here (with proper safeguards).
     supported_environments: list[str] = [ProviderEnvironment.SANDBOX.value]
@@ -98,6 +102,7 @@ class PaymentProviderAdapter(ABC):
             "mode": self.mode,
             "configured": self.configured,
             "supported_currencies": self.supported_currencies,
+            "supported_countries": list(self.supported_countries),
             "payment_methods": self.payment_methods,
             "supported_flows": [f.value for f in self.supported_flows],
             "supported_environments": list(self.supported_environments),

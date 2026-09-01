@@ -34,6 +34,10 @@ class PaymentProvider(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     supported_currencies: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list)
+    # Capability configuration (empty list = unrestricted / inherit plugin default).
+    supported_countries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    supported_methods: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    supported_flows: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     credentials_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)  # ref, never raw secret
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 

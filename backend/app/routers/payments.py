@@ -36,6 +36,7 @@ async def create_payment(body: PaymentCreate, tenant_id: str | None = None, db: 
             currency=body.currency, provider_key=body.provider_key, environment=body.environment,
             description=body.description, customer_email=body.customer_email,
             idempotency_key=body.idempotency_key, metadata=body.metadata,
+            country=body.country, payment_method=body.payment_method, flow=body.flow,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

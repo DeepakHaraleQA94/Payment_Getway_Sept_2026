@@ -352,6 +352,33 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 - Git history still contains the old (now-invalid) password in prior commits; history rewrite is not
   performed here (platform-managed .git). The rotation makes those copies unusable.
 
+## Multi-Country, Capability-Aware Provider Routing (2026-06)
+### What changed (generic architecture preserved — no PSP/country hard-coded in core)
+- Provider capability now expresses: supported countries/regions, currencies, payment methods,
+  flows (direct/intent/qr) and environments. Countries added to both the plugin contract
+  (`PaymentProviderAdapter.supported_countries`, default []=unrestricted) and the provider-account
+  config (new additive columns `supported_countries`, `supported_methods`, `supported_flows` on
+  `payment_providers`; migration a7c3e1f9b204). Effective capability = account list when set, else
+  plugin default; empty = unrestricted for that dimension.
+- Routing (`routing_engine.plan_route`) now selects candidates by:
+  tenant -> country -> currency -> payment method -> flow -> environment -> enabled -> capability
+  -> health -> priority. Never routes to a provider that lacks the payment's country/currency/
+  method/flow. `match_capability` / `match_plugin_capability` reused for explicit selection too.
+- Payment request carries `country` (falls back to tenant.country), `payment_method` (default card),
+  `flow` (default direct). Priority-based failover preserved; idempotency preserved (single payment
+  row claimed via unique key before dispatch, so failover can never double-charge). The complete
+  routing decision + attempt trace is stored in payment metadata (`routing_trace`,
+  `routing_attempts`) with NO secrets.
+- Ready for India / Sri Lanka / UK / USA / other providers purely via account config + a plugin;
+  adding a plugin needs no core change (guarded by test_core_has_no_provider_specific_imports).
+- Mock + example reference plugins only; no real PSP, no real credentials.
+
+### Tests
+- New test_provider_capability_routing.py (15 tests): India/INR/UPI, Sri Lanka/LKR, UK/GBP, USA/USD
+  matches; unsupported currency/country/method/flow rejection; explicit-selection enforcement;
+  sandbox/live separation; priority routing; failover; idempotent-failover no-duplicate; tenant
+  isolation; trace-has-no-secrets. Full backend suite: 177 passed serially (`pytest tests/ -n0`).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

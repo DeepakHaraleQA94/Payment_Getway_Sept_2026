@@ -97,7 +97,7 @@ def test_auto_routing_no_accounts_returns_400(admin):
                          "provider_key": "auto", "environment": "sandbox",
                          "idempotency_key": f"iter11-{uuid.uuid4().hex}"})
     assert r.status_code == 400
-    assert "no healthy provider" in r.text.lower()
+    assert "no eligible provider" in r.text.lower()
 
 
 def test_examplepsp_credentials_are_referenced_not_returned(admin):

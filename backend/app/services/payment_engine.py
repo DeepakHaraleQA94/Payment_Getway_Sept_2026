@@ -73,16 +73,31 @@ async def create_payment(
     customer_email: str | None = None,
     idempotency_key: str | None = None,
     metadata: dict | None = None,
+    country: str | None = None,
+    payment_method: str = "card",
+    flow: str = "direct",
 ) -> Payment:
     if amount_minor <= 0:
         raise ValueError("amount_minor must be positive")
 
-    # ---- Environment-aware provider selection + routing plan (through the generic interface) ----
-    # provider_key == "auto" -> priority-ordered failover across all healthy enabled accounts.
+    # Resolve the payment's country/region: explicit request value, else the tenant's country.
+    from app.models.tenant import Tenant
+    if country is None:
+        tenant = await db.get(Tenant, tenant_id)
+        country = tenant.country if tenant else None
+
+    # ---- Capability-aware, environment-aware provider selection (generic contract only) ----
+    # provider_key == "auto" -> priority-ordered failover across all ELIGIBLE healthy accounts
+    # that support the country, currency, payment method and flow of this payment.
+    routing_trace: list[dict] = []
     if provider_key == "auto":
-        candidates = await routing_engine.candidate_accounts(db, tenant_id, environment)
+        candidates, routing_trace = await routing_engine.plan_route(
+            db, tenant_id, environment=environment, currency=currency,
+            payment_method=payment_method, flow=flow, country=country)
         if not candidates:
-            raise ValueError(f"No healthy provider accounts available for the '{environment}' environment")
+            raise ValueError(
+                f"No eligible provider for {currency}/{payment_method}/{flow}"
+                + (f"/{country}" if country else "") + f" in the '{environment}' environment")
         plan = [(a.provider_key, get_provider(a.provider_key), a) for a in candidates]
     else:
         if not has_provider(provider_key):
@@ -97,7 +112,28 @@ async def create_payment(
         # can move by default). SANDBOX stays permissive for the dev/reference provider.
         if environment == "live" and account is None:
             raise ValueError(f"No live provider account configured for '{provider_key}'")
+        # Capability enforcement: never route a payment to a provider that does not support its
+        # country, currency, payment method or flow — even when explicitly selected.
+        if account is not None:
+            ok, reason = routing_engine.match_capability(
+                account, provider, environment=environment, currency=currency,
+                payment_method=payment_method, flow=flow, country=country)
+        else:
+            ok, reason = routing_engine.match_plugin_capability(
+                provider, environment=environment, currency=currency,
+                payment_method=payment_method, flow=flow, country=country)
+        if not ok:
+            raise ValueError(f"Provider '{provider_key}' cannot process this payment ({reason})")
+        routing_trace = [{"provider_key": provider_key, "selected": True, "reason": "explicit",
+                          "environment": environment}]
         plan = [(provider_key, provider, account)]
+
+    # Enrich request metadata with the resolved routing dimensions (no secrets).
+    md = dict(metadata or {})
+    md.setdefault("method", payment_method)
+    md.setdefault("flow", flow)
+    if country:
+        md.setdefault("country", country)
 
     # Idempotency: return existing payment if key already used for this tenant.
     if idempotency_key:
@@ -119,7 +155,7 @@ async def create_payment(
         description=description,
         customer_email=customer_email,
         risk_score=risk,
-        metadata_json=metadata or {},
+        metadata_json=md,
         created_by=str(getattr(actor, "id", "")) or None,
     )
     db.add(payment)
@@ -138,7 +174,7 @@ async def create_payment(
     # failing over to the next healthy account until one succeeds (or all are exhausted).
     charge_req = ChargeRequest(
         amount_minor=amount_minor, currency=currency, reference=reference, description=description,
-        customer_email=customer_email, idempotency_key=idempotency_key, metadata=metadata or {},
+        customer_email=customer_email, idempotency_key=idempotency_key, metadata=md,
     )
     attempts: list[dict] = []
     result = None
@@ -154,8 +190,9 @@ async def create_payment(
 
     payment.provider_key = used_key
     payment.provider_txn_id = result.provider_txn_id
-    if provider_key == "auto" or len(plan) > 1:
-        payment.metadata_json = {**(payment.metadata_json or {}), "routing_attempts": attempts}
+    # Record the full routing decision + attempt trace (no secrets) for observability/failover.
+    payment.metadata_json = {**(payment.metadata_json or {}),
+                             "routing_trace": routing_trace, "routing_attempts": attempts}
     prev_status = payment.status
     payment_state.validate_transition(prev_status, result.status)
     payment.status = result.status
