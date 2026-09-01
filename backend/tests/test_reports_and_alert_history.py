@@ -87,16 +87,15 @@ def test_alert_history_records_fire_and_recover(admin, tenant):
     # Force a low success rate -> alert fires.
     for i in range(6):
         _pay(admin, tenant, 1000 + i * 100 + 13, f"HDECL-{i}")
-    fire = admin.post(f"/api/providers/alerts/evaluate?tenant_id={tenant}").json()
-    assert any(c["transition"] == "alerting" for c in fire["changes"])
+    admin.post(f"/api/providers/alerts/evaluate?tenant_id={tenant}")
 
     # Recover with successes.
     for i in range(12):
         _pay(admin, tenant, 6000 + i, f"HOK-{i}")
-    rec = admin.post(f"/api/providers/alerts/evaluate?tenant_id={tenant}").json()
-    assert any(c["transition"] == "recovered" for c in rec["changes"])
+    admin.post(f"/api/providers/alerts/evaluate?tenant_id={tenant}")
 
-    hist = admin.get(f"/api/providers/alerts/history?tenant_id={tenant}&limit=10")
+    # Assert on persisted history (robust to the 60s background eval job racing these calls).
+    hist = admin.get(f"/api/providers/alerts/history?tenant_id={tenant}&limit=20")
     assert hist.status_code == 200
     events = hist.json()
     transitions = [e["transition"] for e in events]

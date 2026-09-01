@@ -81,8 +81,11 @@ def test_alert_fires_on_low_success_rate_then_dedupes_then_recovers(admin, alert
         _pay(admin, alert_tenant, 1000 + i * 100 + 13, f"DECL-{i}")
 
     ev1 = admin.post(f"/api/providers/alerts/evaluate?tenant_id={alert_tenant}").json()
+    # End-state: provider is alerting (robust to the background eval job racing this call).
     assert any(a["provider_key"] == "mock" and a["severity"] == "warning" for a in ev1["active_alerts"])
-    assert any(c["transition"] == "alerting" for c in ev1["changes"])
+    # The "alerting" transition was recorded (by this call or the background job) in history.
+    hist1 = admin.get(f"/api/providers/alerts/history?tenant_id={alert_tenant}&limit=20").json()
+    assert any(h["transition"] == "alerting" and h["provider_key"] == "mock" for h in hist1)
 
     # Second evaluation must NOT re-fire (dedupe): still active, but no new transition.
     ev2 = admin.post(f"/api/providers/alerts/evaluate?tenant_id={alert_tenant}").json()
@@ -96,9 +99,12 @@ def test_alert_fires_on_low_success_rate_then_dedupes_then_recovers(admin, alert
     # Add enough successes to push success rate back above threshold -> recovery notice.
     for i in range(10):
         _pay(admin, alert_tenant, 5000 + i, f"OK-{i}")
-    ev3 = admin.post(f"/api/providers/alerts/evaluate?tenant_id={alert_tenant}").json()
-    assert any(c["transition"] == "recovered" for c in ev3["changes"])
+    admin.post(f"/api/providers/alerts/evaluate?tenant_id={alert_tenant}")
+    # End-state: no active alerts, and a "recovered" transition is on record. Robust to the
+    # background health-eval job (60s interval) which may apply the transition first.
     assert admin.get(f"/api/providers/alerts?tenant_id={alert_tenant}").json() == []
+    hist2 = admin.get(f"/api/providers/alerts/history?tenant_id={alert_tenant}&limit=20").json()
+    assert any(h["transition"] == "recovered" and h["provider_key"] == "mock" for h in hist2)
 
 
 def test_alerts_endpoint_never_exposes_secrets(admin, alert_tenant):

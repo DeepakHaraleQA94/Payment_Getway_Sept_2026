@@ -287,6 +287,21 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   extended (custom range + validation, email settings roundtrip + gating + invalid-freq drop,
   stability score). Testing agent: frontend 100%, no issues (all three flows validated on Acme).
 
+## Scope Freeze — Verification & Hardening (2026-06)
+- Scope frozen per user: no new features, no external credentials. Focus = complete/test/debug/
+  security-verify the already-approved functionality. Rejected (kept as FUTURE only, do not build
+  now): Connect Email Provider, Stability Trend, Report Presets, Auto-Route Away From Flaky.
+- Added test_security_new_endpoints.py (7 tests): cross-tenant GET denial + report-download denial,
+  RBAC (report.manage required for report run + email-settings PUT), unauthenticated 401, and
+  no-secret-leakage (ciphertext/credential_ref/secret/fernet/private_key) across the new endpoints.
+- Debugged flaky alert test: the 60s background `_alert_eval_job` (evaluate_all) races a test's own
+  `evaluate` call once the suite runtime crosses a 60s tick, so a transition can land in the job's
+  call instead of the test's `changes`. Hardened the alert-fire/recover assertions (in
+  test_provider_alerts.py + test_reports_and_alert_history.py) to assert persisted active-state and
+  alert history rather than a single call's `changes`. Product behavior unchanged (idempotent dedupe).
+- Result: 158 backend tests pass serially (`pytest tests/ -n0`), twice consecutively. No enhancements
+  proposed going forward per user instruction.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).
