@@ -4,13 +4,26 @@ All financial mutations are server-side validated, tenant-isolated, idempotent
 (via idempotency_key) and audit-logged.
 """
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_audit
 from app.models.payment import Payment, Refund
 from app.providers.base import ChargeRequest
 from app.providers.registry import get_provider
-from app.services import fee_engine, ledger_service, risk_service, webhook_service
+from app.services import fee_engine, ledger_service, payment_state, risk_service, webhook_service
+
+
+async def _existing_payment(db, tenant_id, idempotency_key):
+    res = await db.execute(select(Payment).where(
+        Payment.tenant_id == tenant_id, Payment.idempotency_key == idempotency_key))
+    return res.scalar_one_or_none()
+
+
+async def _existing_refund(db, tenant_id, idempotency_key):
+    res = await db.execute(select(Refund).where(
+        Refund.tenant_id == tenant_id, Refund.idempotency_key == idempotency_key))
+    return res.scalar_one_or_none()
 
 
 async def create_payment(
@@ -32,12 +45,7 @@ async def create_payment(
 
     # Idempotency: return existing payment if key already used for this tenant.
     if idempotency_key:
-        res = await db.execute(
-            select(Payment).where(
-                Payment.tenant_id == tenant_id, Payment.idempotency_key == idempotency_key
-            )
-        )
-        existing = res.scalar_one_or_none()
+        existing = await _existing_payment(db, tenant_id, idempotency_key)
         if existing:
             return existing
 
@@ -58,7 +66,15 @@ async def create_payment(
         created_by=str(getattr(actor, "id", "")) or None,
     )
     db.add(payment)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Concurrent request with the same idempotency key won the race; return that one.
+        await db.rollback()
+        existing = await _existing_payment(db, tenant_id, idempotency_key)
+        if existing:
+            return existing
+        raise
 
     provider = get_provider(provider_key)
     result = provider.charge(
@@ -73,6 +89,8 @@ async def create_payment(
     )
 
     payment.provider_txn_id = result.provider_txn_id
+    prev_status = payment.status
+    payment_state.validate_transition(prev_status, result.status)
     payment.status = result.status
 
     if result.success:
@@ -91,7 +109,9 @@ async def create_payment(
         db, action="payment.create", resource_type="payment", resource_id=payment.id,
         tenant_id=tenant_id, actor_id=str(getattr(actor, "id", "")) or None,
         actor_email=getattr(actor, "email", None),
-        changes={"status": payment.status, "amount_minor": amount_minor, "currency": currency},
+        changes={"previous_state": prev_status, "new_state": payment.status,
+                 "amount_minor": amount_minor, "currency": currency,
+                 "correlation_id": str(payment.id)},
     )
     await webhook_service.dispatch(
         db, tenant_id=tenant_id,
@@ -114,19 +134,14 @@ async def create_refund(
     reason: str | None = None,
     idempotency_key: str | None = None,
 ) -> Refund:
-    if payment.status not in ("succeeded", "captured", "partially_refunded"):
+    if not payment_state.is_refundable(payment.status):
         raise ValueError("Payment is not in a refundable state")
     already = sum(r.amount_minor for r in payment.refunds if r.status == "succeeded")
     if amount_minor <= 0 or already + amount_minor > payment.amount_minor:
         raise ValueError("Refund exceeds refundable amount")
 
     if idempotency_key:
-        res = await db.execute(
-            select(Refund).where(
-                Refund.tenant_id == tenant_id, Refund.idempotency_key == idempotency_key
-            )
-        )
-        existing = res.scalar_one_or_none()
+        existing = await _existing_refund(db, tenant_id, idempotency_key)
         if existing:
             return existing
 
@@ -136,13 +151,21 @@ async def create_refund(
         idempotency_key=idempotency_key, created_by=str(getattr(actor, "id", "")) or None,
     )
     db.add(refund)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        existing = await _existing_refund(db, tenant_id, idempotency_key)
+        if existing:
+            return existing
+        raise
 
     provider = get_provider(payment.provider_key)
     result = provider.refund(payment.provider_txn_id or "", amount_minor, payment.currency)
     refund.status = result.status if result.success else "failed"
     refund.provider_refund_id = result.provider_txn_id
 
+    prev_status = payment.status
     if result.success:
         await ledger_service.post_entry(
             db, tenant_id=tenant_id, currency=payment.currency, direction="debit",
@@ -150,13 +173,17 @@ async def create_refund(
             description=f"Refund for {payment.reference}",
         )
         new_total = already + amount_minor
-        payment.status = "refunded" if new_total >= payment.amount_minor else "partially_refunded"
+        target = "refunded" if new_total >= payment.amount_minor else "partially_refunded"
+        payment_state.validate_transition(prev_status, target)
+        payment.status = target
 
     await record_audit(
         db, action="refund.create", resource_type="refund", resource_id=refund.id,
         tenant_id=tenant_id, actor_id=str(getattr(actor, "id", "")) or None,
         actor_email=getattr(actor, "email", None),
-        changes={"status": refund.status, "amount_minor": amount_minor},
+        changes={"refund_status": refund.status, "previous_state": prev_status,
+                 "new_state": payment.status, "amount_minor": amount_minor,
+                 "correlation_id": str(refund.id)},
     )
     await webhook_service.dispatch(
         db, tenant_id=tenant_id,

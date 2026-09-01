@@ -30,7 +30,8 @@ async def ledger_entries(tenant_id: str | None = None, db: AsyncSession = Depend
     entries = res.scalars().all()
     return [{"id": str(e.id), "direction": e.direction, "amount_minor": e.amount_minor,
              "currency": e.currency, "balance_after_minor": e.balance_after_minor,
-             "ref_type": e.ref_type, "description": e.description,
+             "ref_type": e.ref_type, "ref_id": str(e.ref_id) if e.ref_id else None,
+             "description": e.description,
              "created_at": e.created_at.isoformat()} for e in entries]
 
 
