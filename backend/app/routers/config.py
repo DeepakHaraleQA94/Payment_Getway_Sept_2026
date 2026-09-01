@@ -2,6 +2,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,7 @@ from app.core.deps import get_current_user, require_permission, resolve_tenant_i
 from app.models.feature import FeatureFlag
 from app.models.finance import FeeRule
 from app.models.payment import Payment, PaymentProvider
+from app.providers.base import ChargeRequest, ProviderError
 from app.providers.registry import get_provider, has_provider, list_providers
 from app.schemas import (
     FeatureFlagCreate,
@@ -24,6 +26,20 @@ from app.schemas import (
 from app.services import payment_state
 
 router = APIRouter(prefix="/api", tags=["config"])
+
+
+class ProviderFlowRequest(BaseModel):
+    amount_minor: int
+    currency: str = "USD"
+    reference: str = "REF"
+    description: str | None = None
+    customer_email: str | None = None
+    metadata: dict = {}
+
+    def to_charge_request(self) -> ChargeRequest:
+        return ChargeRequest(amount_minor=self.amount_minor, currency=self.currency,
+                             reference=self.reference, description=self.description,
+                             customer_email=self.customer_email, metadata=self.metadata or {})
 
 
 # ---- Feature flags ----
@@ -88,6 +104,61 @@ async def provider_health(provider_key: str, user=Depends(get_current_user)):
     return {"provider": provider_key, **get_provider(provider_key).health_check()}
 
 
+def _require_plugin(provider_key: str):
+    if not has_provider(provider_key):
+        raise HTTPException(status_code=404, detail="Unknown provider")
+    return get_provider(provider_key)
+
+
+@router.post("/providers/{provider_key}/intent")
+async def provider_generate_intent(provider_key: str, body: ProviderFlowRequest,
+                                   user=Depends(require_permission("provider.manage"))):
+    """Generic INTENT-flow initiation via the plugin contract (provider-agnostic)."""
+    plugin = _require_plugin(provider_key)
+    if not plugin.supports_intent():
+        raise HTTPException(status_code=400, detail="Provider does not support the intent flow")
+    try:
+        intent = plugin.generate_intent(body.to_charge_request())
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    return {"intent_id": intent.intent_id, "client_token": intent.client_token,
+            "redirect_url": intent.redirect_url, "expires_at": intent.expires_at}
+
+
+@router.post("/providers/{provider_key}/qr")
+async def provider_generate_qr(provider_key: str, body: ProviderFlowRequest,
+                               user=Depends(require_permission("provider.manage"))):
+    """Generic QR-flow initiation via the plugin contract. Payload is never card data."""
+    plugin = _require_plugin(provider_key)
+    if not plugin.supports_qr():
+        raise HTTPException(status_code=400, detail="Provider does not support the QR flow")
+    try:
+        qr = plugin.generate_qr(body.to_charge_request())
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    return {"qr_id": qr.qr_id, "qr_payload": qr.qr_payload,
+            "image_data_url": qr.image_data_url, "expires_at": qr.expires_at}
+
+
+@router.get("/providers/{provider_key}/status/{provider_txn_id}")
+async def provider_get_status(provider_key: str, provider_txn_id: str,
+                              user=Depends(get_current_user)):
+    """Generic status lookup via the plugin contract."""
+    plugin = _require_plugin(provider_key)
+    st = plugin.get_payment_status(provider_txn_id)
+    return {"provider_txn_id": st.provider_txn_id, "status": st.normalized_status}
+
+
+@router.post("/providers/{provider_key}/reconcile/{provider_txn_id}")
+async def provider_reconcile(provider_key: str, provider_txn_id: str,
+                             user=Depends(require_permission("provider.manage"))):
+    """Generic reconciliation via the plugin contract (fetch provider source-of-truth)."""
+    plugin = _require_plugin(provider_key)
+    rec = plugin.reconcile(provider_txn_id)
+    return {"provider_txn_id": rec.provider_txn_id, "status": rec.normalized_status,
+            "matched": rec.matched}
+
+
 @router.post("/providers/{provider_key}/webhook")
 async def provider_inbound_webhook(provider_key: str, request: Request,
                                    db: AsyncSession = Depends(get_db)):
@@ -106,9 +177,9 @@ async def provider_inbound_webhook(provider_key: str, request: Request,
 
     payload = await request.body()
     try:
-        event = plugin.verify_webhook(payload, dict(request.headers))
+        event = plugin.verify_callback(payload, dict(request.headers))
     except NotImplementedError:
-        raise HTTPException(status_code=400, detail="Provider does not implement webhooks")
+        raise HTTPException(status_code=400, detail="Provider does not implement callbacks")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook payload or signature")
 

@@ -13,21 +13,32 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 export default function Payments() {
   const { selectedTenantId } = useAuth();
   const [payments, setPayments] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
-  const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "" });
+  const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: "mock" });
   const [refundAmount, setRefundAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
-    const { data } = await api.get("/payments", { params: { tenant_id: selectedTenantId } });
-    setPayments(data);
-  }, [selectedTenantId]);
+    const [pay, prov] = await Promise.all([
+      api.get("/payments", { params: { tenant_id: selectedTenantId } }),
+      api.get("/providers/available"),
+    ]);
+    setPayments(pay.data);
+    setProviders(prov.data);
+    if (prov.data.length && !prov.data.some((p) => p.key === form.provider_key)) {
+      setForm((f) => ({ ...f, provider_key: prov.data[0].key }));
+    }
+  }, [selectedTenantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 
@@ -38,13 +49,13 @@ export default function Payments() {
         reference: form.reference || `ORD-${Date.now()}`,
         amount_minor: Math.round(parseFloat(form.amount) * 100),
         currency: form.currency,
-        provider_key: "mock",
+        provider_key: form.provider_key,
         customer_email: form.customer_email || null,
         idempotency_key: `ui-${Date.now()}`,
       }, { params: { tenant_id: selectedTenantId } });
-      toast.success("Payment processed via sandbox provider");
+      toast.success("Payment processed via provider plugin");
       setOpen(false);
-      setForm({ reference: "", amount: "", currency: "USD", customer_email: "" });
+      setForm({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: form.provider_key });
       load();
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
@@ -89,6 +100,19 @@ export default function Payments() {
                 <DialogDescription>Process a sandbox transaction through the mock provider. No real funds move.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label>Provider adapter</Label>
+                  <Select value={form.provider_key} onValueChange={(v) => setForm({ ...form, provider_key: v })}>
+                    <SelectTrigger data-testid="payment-provider-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {providers.map((p) => (
+                        <SelectItem key={p.key} value={p.key} data-testid={`payment-provider-option-${p.key}`}>
+                          {p.display_name} · {p.mode}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label>Reference</Label>
                   <Input data-testid="payment-reference-input" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="ORD-1001" />

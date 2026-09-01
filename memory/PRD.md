@@ -100,6 +100,32 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   (14 tests) verifying the contract, discovery/isolation, capability/credential/health interfaces,
   sandbox-live abstraction, and the generic webhook contract via the Mock provider.
 
+## Generic provider contract expanded (2026-06) — plugin building blocks
+- Expanded the provider-agnostic contract to the full SRD surface, still with NO real
+  provider (Mock remains the sole reference implementation; live mode stays blocked).
+- New building-block interfaces in `app/providers/contracts.py`: ProviderConfiguration,
+  Authentication, ApiClient, RequestMapper, ResponseMapper, StatusMapper, CallbackHandler,
+  ErrorHandler, HealthCheck — plus normalized types (ProviderIntent, ProviderQR,
+  ProviderStatusResult, ProviderReconciliation, ProviderError, PaymentFlow, etc.).
+- `PaymentProviderAdapter` (base.py) now exposes: create_payment, get_payment_status,
+  generate_intent, generate_qr, verify_callback, reconcile (+ refund); charge/verify_webhook
+  kept as backward-compatible aliases. Capabilities now advertise supported_flows and
+  supports_intent/supports_qr/supports_webhooks/supports_refund.
+- MockProvider is composed of all nine building blocks as the reference implementation
+  (direct + intent + qr flows, in-memory API client, no credentials, no network).
+- Core talks only to the contract: payment_engine calls `provider.create_payment`.
+- New generic, provider-agnostic endpoints (delegate to the plugin, resolve by key):
+  POST /api/providers/{key}/intent, /qr, POST /reconcile/{txn}, GET /status/{txn}
+  (existing: /available, /{key}/capabilities, /{key}/health, POST /{key}/webhook).
+- UI wired to the generic interface: Payments screen has a provider selector from discovery;
+  Providers screen shows plugin capability chips; Hosted Checkout stays provider-agnostic.
+- Tests: 99 backend tests pass serially (`pytest tests/ -n0`); test_provider_architecture.py
+  now has 24 tests (contract methods, building-block composition, flows, endpoints, isolation).
+- Known gaps (future): per-tenant credential binding (registry returns a singleton adapter
+  with default sandbox config; real plugins will inject per-tenant ProviderConfiguration via
+  credential_ref -> secret store); intent/QR are exercised via endpoints but not yet surfaced
+  in the hosted-checkout UI (DIRECT flow only) — to be wired when a real provider needs them.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

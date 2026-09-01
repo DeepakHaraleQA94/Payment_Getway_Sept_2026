@@ -33,8 +33,9 @@ def test_mock_implements_generic_contract():
     p = MockProvider()
     assert isinstance(p, PaymentProviderAdapter)
     # Contract methods present.
-    for attr in ("charge", "refund", "capabilities", "health_check",
-                 "required_credentials", "verify_webhook", "get_status"):
+    for attr in ("create_payment", "charge", "refund", "capabilities", "health_check",
+                 "required_credentials", "verify_callback", "verify_webhook",
+                 "get_payment_status"):
         assert callable(getattr(p, attr))
 
 
@@ -186,3 +187,96 @@ def test_generic_inbound_webhook_unmatched_and_ignored():
     # Unknown provider -> 404.
     r3 = httpx.post(f"{BASE}/api/providers/stripe/webhook", json={}, timeout=15)
     assert r3.status_code == 404
+
+
+# ----------------------------- expanded contract (unit) -----------------------------
+def test_contract_exposes_all_srd_methods():
+    p = MockProvider()
+    for m in ("create_payment", "get_payment_status", "generate_intent", "generate_qr",
+              "verify_callback", "reconcile", "refund"):
+        assert callable(getattr(p, m)), f"contract missing {m}"
+
+
+def test_plugin_is_composed_of_building_blocks():
+    from app.providers.contracts import (
+        CallbackHandler, ErrorHandler, HealthCheck, ProviderApiClient,
+        ProviderAuthentication, RequestMapper, ResponseMapper, StatusMapper,
+    )
+    p = MockProvider()
+    assert isinstance(p._auth, ProviderAuthentication)
+    assert isinstance(p._client, ProviderApiClient)
+    assert isinstance(p._req, RequestMapper)
+    assert isinstance(p._resp, ResponseMapper)
+    assert isinstance(p._status, StatusMapper)
+    assert isinstance(p._callback, CallbackHandler)
+    assert isinstance(p._errors, ErrorHandler)
+    assert isinstance(p._health, HealthCheck)
+
+
+def test_capabilities_include_flows_and_flags():
+    caps = MockProvider().capabilities()
+    assert set(caps["supported_flows"]) == {"direct", "intent", "qr"}
+    assert caps["supports_intent"] is True
+    assert caps["supports_qr"] is True
+    assert caps["supports_webhooks"] is True
+
+
+def test_create_payment_status_and_reconcile():
+    p = MockProvider()
+    ok = p.create_payment(ChargeRequest(amount_minor=5000, currency="USD", reference="R"))
+    assert ok.success and ok.status == "succeeded"
+    st = p.get_payment_status(ok.provider_txn_id)
+    assert st.normalized_status == "succeeded"
+    rec = p.reconcile(ok.provider_txn_id)
+    assert rec.matched is True and rec.normalized_status == "succeeded"
+
+
+def test_intent_and_qr_generation():
+    p = MockProvider()
+    intent = p.generate_intent(ChargeRequest(amount_minor=1000, currency="USD", reference="R"))
+    assert intent.intent_id and intent.client_token
+    qr = p.generate_qr(ChargeRequest(amount_minor=1000, currency="USD", reference="R"))
+    assert qr.qr_id and qr.qr_payload.startswith("mockqr://")
+    # QR payload never contains card data.
+    assert "card" not in qr.qr_payload.lower()
+
+
+def test_status_mapper_normalizes_provider_statuses():
+    from app.providers.mock import _MockStatusMapper
+    sm = _MockStatusMapper()
+    assert sm.to_cloudpay_status("declined") == "failed"
+    assert sm.to_cloudpay_status("succeeded") == "succeeded"
+    assert sm.to_cloudpay_status("requires_confirmation") == "pending"
+
+
+# ----------------------------- expanded contract (HTTP) -----------------------------
+def test_intent_endpoint(admin):
+    r = admin.post("/api/providers/mock/intent",
+                   json={"amount_minor": 2500, "currency": "USD", "reference": "INT-1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["intent_id"] and r.json()["client_token"]
+
+
+def test_qr_endpoint(admin):
+    r = admin.post("/api/providers/mock/qr",
+                   json={"amount_minor": 2500, "currency": "USD", "reference": "QR-1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["qr_id"] and r.json()["qr_payload"].startswith("mockqr://")
+
+
+def test_status_and_reconcile_endpoints(admin, acme):
+    p = admin.post(f"/api/payments?tenant_id={acme}",
+                   json={"reference": f"INV-ST-{uuid.uuid4().hex[:5]}", "amount_minor": 3000,
+                         "currency": "USD", "provider_key": "mock",
+                         "idempotency_key": f"st-{uuid.uuid4().hex}"}).json()
+    txn = p["provider_txn_id"]
+    s = admin.get(f"/api/providers/mock/status/{txn}")
+    assert s.status_code == 200 and s.json()["status"] == "succeeded"
+    rec = admin.post(f"/api/providers/mock/reconcile/{txn}")
+    assert rec.status_code == 200 and rec.json()["matched"] is True
+
+
+def test_flow_endpoints_reject_unknown_provider(admin):
+    assert admin.post("/api/providers/stripe/intent", json={"amount_minor": 100}).status_code == 404
+    assert admin.post("/api/providers/stripe/qr", json={"amount_minor": 100}).status_code == 404
+

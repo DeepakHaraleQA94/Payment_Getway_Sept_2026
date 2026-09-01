@@ -80,7 +80,7 @@ async def create_payment(
     # tenant_id + idempotency_key) BEFORE dispatching the external charge. The same
     # idempotency_key is forwarded so a provider plugin can de-dupe on its side if supported.
     provider = get_provider(provider_key)
-    result = provider.charge(
+    result = provider.create_payment(
         ChargeRequest(
             amount_minor=amount_minor,
             currency=currency,

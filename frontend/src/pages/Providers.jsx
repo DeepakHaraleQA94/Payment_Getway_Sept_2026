@@ -78,6 +78,23 @@ export default function Providers() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {(() => {
+                    const meta = available.find((p) => p.key === form.provider_key);
+                    if (!meta) return null;
+                    const caps = [
+                      `mode: ${meta.mode}`,
+                      ...(meta.supported_flows || []).map((f) => `flow: ${f}`),
+                      meta.supports_refund ? "refunds" : null,
+                      meta.supports_webhooks ? "webhooks" : null,
+                    ].filter(Boolean);
+                    return (
+                      <div className="mt-2 flex flex-wrap gap-1.5" data-testid="provider-capabilities">
+                        {caps.map((c) => (
+                          <span key={c} className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 border border-border">{c}</span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="space-y-2">
                   <Label>Display name</Label>
