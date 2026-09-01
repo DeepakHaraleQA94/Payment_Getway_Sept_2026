@@ -53,6 +53,15 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   Providers, Fees, Tenants, Access Control (users/roles/permissions), Feature Flags, Audit, Monitoring.
 - Tests: 22 backend tests pass (foundation + extended).
 
+## Implemented (2026-09-01, iteration 2)
+- Hosted Checkout: per-tenant API keys (secret shown once, hashed at rest), shareable hosted
+  checkout links, and a public `/checkout/:token` payment page (sandbox). Programmatic session
+  creation via `X-API-Key` on `/api/v1/checkout/sessions`.
+- Webhook Notifications: configurable endpoints (HMAC-signed deliveries), auto-dispatch on
+  payment.succeeded/failed and refund.succeeded/failed, "Send test", and a live Delivery Inspector.
+- CSV Reports: export payments, settlements and ledger entries to CSV from the dashboard.
+- Tests: 31 backend tests pass (added test_commerce.py, 9 cases).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

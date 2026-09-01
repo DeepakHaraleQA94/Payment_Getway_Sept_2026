@@ -209,3 +209,61 @@ class FeeRuleOut(ORMBase):
     min_fee_minor: int
     active: bool
     priority: int
+
+
+# ---- API keys ----
+class ApiKeyCreate(BaseModel):
+    label: str = "Default"
+
+
+class ApiKeyOut(ORMBase):
+    id: uuid.UUID
+    label: str
+    key_prefix: str
+    last4: str
+    active: bool
+    last_used_at: datetime | None
+    created_at: datetime
+
+
+# ---- Webhooks ----
+class WebhookCreate(BaseModel):
+    url: str = Field(max_length=500)
+    description: str | None = None
+    events: list[str] = []
+
+
+class WebhookOut(ORMBase):
+    id: uuid.UUID
+    url: str
+    description: str | None
+    events: list
+    enabled: bool
+    created_at: datetime
+
+
+# ---- Checkout ----
+class CheckoutCreate(BaseModel):
+    reference: str = Field(default="", max_length=64)
+    amount_minor: int = Field(gt=0)
+    currency: str = "USD"
+    description: str | None = None
+    customer_email: EmailStr | None = None
+    success_url: str | None = None
+
+
+class CheckoutOut(ORMBase):
+    id: uuid.UUID
+    token: str
+    reference: str
+    amount_minor: int
+    currency: str
+    description: str | None
+    customer_email: str | None
+    status: str
+    created_at: datetime
+
+
+class CheckoutPay(BaseModel):
+    customer_email: EmailStr | None = None
+    card_number: str | None = None  # sandbox only; never stored

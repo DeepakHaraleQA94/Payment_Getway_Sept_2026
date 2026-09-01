@@ -25,6 +25,9 @@ PERMISSIONS = [
     ("settlement.manage", "Generate settlements", "settlements"),
     ("audit.view", "View audit logs", "audit"),
     ("config.manage", "Manage system configuration", "config"),
+    ("apikey.manage", "Manage API keys", "api_keys"),
+    ("webhook.manage", "Manage webhooks", "webhooks"),
+    ("checkout.manage", "Manage checkout sessions", "checkout"),
 ]
 
 

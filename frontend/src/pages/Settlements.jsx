@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { Banknote } from "lucide-react";
+import { Banknote, Download } from "lucide-react";
 import { toast } from "sonner";
-import { api, money, formatApiError } from "@/lib/api";
+import { api, money, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,15 @@ export default function Settlements() {
       <PageHeader
         title="Settlement & Reconciliation"
         subtitle="Batch captured payments and reconcile net payouts."
-        action={<Button data-testid="generate-settlement-button" onClick={generate} disabled={busy}><Banknote className="h-4 w-4 mr-2" /> Generate Settlement</Button>}
+        action={
+          <div className="flex gap-2">
+            <Button variant="outline" data-testid="export-settlements-csv"
+              onClick={() => downloadCsv("/reports/export/settlements.csv", { tenant_id: selectedTenantId }, "settlements.csv")}>
+              <Download className="h-4 w-4 mr-2" /> Export CSV
+            </Button>
+            <Button data-testid="generate-settlement-button" onClick={generate} disabled={busy}><Banknote className="h-4 w-4 mr-2" /> Generate Settlement</Button>
+          </div>
+        }
       />
       <Panel className="p-0 overflow-hidden">
         {rows.length === 0 ? (

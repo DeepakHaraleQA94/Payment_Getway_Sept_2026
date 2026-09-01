@@ -96,3 +96,27 @@ def resolve_tenant_id(user: User, requested_tenant_id: str | None) -> uuid.UUID 
     if requested_tenant_id and str(user.tenant_id) != requested_tenant_id:
         raise HTTPException(status_code=403, detail="Cross-tenant access denied")
     return user.tenant_id
+
+
+
+async def get_tenant_from_api_key(request: Request, db: AsyncSession = Depends(get_db)):
+    """Authenticate a public API request via the X-API-Key header. Returns the Tenant."""
+    from datetime import datetime, timezone
+
+    from app.core.security import hash_api_key
+    from app.models.commerce import ApiKey
+    from app.models.tenant import Tenant
+
+    key = request.headers.get("X-API-Key") or request.headers.get("x-api-key")
+    if not key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    res = await db.execute(select(ApiKey).where(ApiKey.key_hash == hash_api_key(key), ApiKey.active.is_(True)))
+    api_key = res.scalar_one_or_none()
+    if api_key is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    api_key.last_used_at = datetime.now(timezone.utc)
+    tenant = await db.get(Tenant, api_key.tenant_id)
+    if tenant is None or tenant.status != "active":
+        raise HTTPException(status_code=403, detail="Tenant inactive")
+    await db.commit()
+    return tenant

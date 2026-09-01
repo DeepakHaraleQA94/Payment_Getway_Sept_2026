@@ -12,6 +12,7 @@ from app.core.deps import get_current_user, resolve_tenant_id
 from app.models.payment import Payment
 from app.models.tenant import Tenant
 from app.routers import auth, config as config_router, finance, iam, payments, system, tenants
+from app.routers import api_keys, webhooks, checkout, reports_export
 from app.seed import seed
 from app.services import turnover_engine
 
@@ -33,7 +34,8 @@ app.add_middleware(
 )
 
 for r in (auth.router, tenants.router, iam.router, config_router.router,
-          payments.router, finance.router, system.router):
+          payments.router, finance.router, system.router,
+          api_keys.router, webhooks.router, checkout.router, reports_export.router):
     app.include_router(r)
 
 

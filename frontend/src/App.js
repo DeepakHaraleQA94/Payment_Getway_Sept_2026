@@ -17,6 +17,10 @@ import AccessControl from "@/pages/AccessControl";
 import Features from "@/pages/Features";
 import Audit from "@/pages/Audit";
 import Monitoring from "@/pages/Monitoring";
+import ApiKeys from "@/pages/ApiKeys";
+import Checkout from "@/pages/Checkout";
+import Webhooks from "@/pages/Webhooks";
+import CheckoutPage from "@/pages/CheckoutPage";
 
 function FullLoader() {
   return (
@@ -41,11 +45,15 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/checkout/:token" element={<CheckoutPage />} />
       <Route path="/dashboard" element={<Protected><Overview /></Protected>} />
       <Route path="/dashboard/payments" element={<Protected><Payments /></Protected>} />
       <Route path="/dashboard/refunds" element={<Protected><Refunds /></Protected>} />
       <Route path="/dashboard/ledger" element={<Protected><Ledger /></Protected>} />
       <Route path="/dashboard/settlements" element={<Protected><Settlements /></Protected>} />
+      <Route path="/dashboard/checkout" element={<Protected><Checkout /></Protected>} />
+      <Route path="/dashboard/api-keys" element={<Protected><ApiKeys /></Protected>} />
+      <Route path="/dashboard/webhooks" element={<Protected><Webhooks /></Protected>} />
       <Route path="/dashboard/providers" element={<Protected><Providers /></Protected>} />
       <Route path="/dashboard/fees" element={<Protected><Fees /></Protected>} />
       <Route path="/dashboard/tenants" element={<Protected><Tenants /></Protected>} />

@@ -19,3 +19,9 @@ from app.models.finance import (  # noqa: F401
     TurnoverSnapshot,
 )
 from app.models.platform import AuditLog, FxRate, KycRecord, SystemConfig  # noqa: F401
+from app.models.commerce import (  # noqa: F401
+    ApiKey,
+    CheckoutSession,
+    WebhookDelivery,
+    WebhookEndpoint,
+)

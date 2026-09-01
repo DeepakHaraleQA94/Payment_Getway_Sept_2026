@@ -1,0 +1,146 @@
+import { useEffect, useState, useCallback } from "react";
+import { Plus, Copy, ExternalLink, Check } from "lucide-react";
+import { toast } from "sonner";
+import { api, money, formatApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+export default function Checkout() {
+  const { selectedTenantId, tenants } = useAuth();
+  const [sessions, setSessions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ amount: "", description: "", customer_email: "" });
+  const [createdUrl, setCreatedUrl] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const tenant = tenants.find((t) => t.id === selectedTenantId);
+
+  const load = useCallback(async () => {
+    if (!selectedTenantId) return;
+    const { data } = await api.get("/checkout/sessions", { params: { tenant_id: selectedTenantId } });
+    setSessions(data);
+  }, [selectedTenantId]);
+  useEffect(() => { load(); }, [load]);
+
+  const checkoutUrl = (token) => `${window.location.origin}/checkout/${token}`;
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/checkout/sessions", {
+        amount_minor: Math.round(parseFloat(form.amount) * 100),
+        currency: tenant?.default_currency || "USD",
+        description: form.description || null,
+        customer_email: form.customer_email || null,
+      }, { params: { tenant_id: selectedTenantId } });
+      setCreatedUrl(checkoutUrl(data.token));
+      setForm({ amount: "", description: "", customer_email: "" });
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+
+  const copy = (url, id) => {
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    toast.success("Checkout link copied");
+    setTimeout(() => setCopiedId(null), 1500);
+  };
+
+  const closeDialog = () => { setOpen(false); setCreatedUrl(null); };
+
+  return (
+    <div data-testid="checkout-page">
+      <PageHeader
+        title="Hosted Checkout"
+        subtitle="Create shareable payment links your customers can pay on a hosted page."
+        action={
+          <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
+            <DialogTrigger asChild>
+              <Button data-testid="create-checkout-button"><Plus className="h-4 w-4 mr-2" /> New Checkout Link</Button>
+            </DialogTrigger>
+            <DialogContent data-testid="create-checkout-dialog">
+              <DialogHeader>
+                <DialogTitle>Create Checkout Link</DialogTitle>
+                <DialogDescription>Generate a hosted sandbox checkout you can share with a customer.</DialogDescription>
+              </DialogHeader>
+              {!createdUrl ? (
+                <div className="space-y-4 py-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2"><Label>Amount ({tenant?.default_currency || "USD"})</Label>
+                      <Input data-testid="checkout-amount-input" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="25.00" /></div>
+                    <div className="space-y-2"><Label>Customer email</Label>
+                      <Input data-testid="checkout-email-input" value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></div>
+                  </div>
+                  <div className="space-y-2"><Label>Description</Label>
+                    <Input data-testid="checkout-desc-input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Pro plan" /></div>
+                </div>
+              ) : (
+                <div className="space-y-3 py-2">
+                  <p className="text-sm text-muted-foreground">Share this link with your customer:</p>
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/60 border border-border">
+                    <code data-testid="checkout-created-url" className="text-xs break-all flex-1">{createdUrl}</code>
+                    <Button size="sm" variant="ghost" data-testid="copy-checkout-url" onClick={() => copy(createdUrl, "new")}>
+                      {copiedId === "new" ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <a href={createdUrl} target="_blank" rel="noreferrer" className="inline-flex items-center text-sm text-primary hover:underline">
+                    Open checkout page <ExternalLink className="h-3.5 w-3.5 ml-1" />
+                  </a>
+                </div>
+              )}
+              <DialogFooter>
+                {!createdUrl
+                  ? <Button data-testid="submit-checkout-button" onClick={create} disabled={busy || !form.amount}>Create Link</Button>
+                  : <Button data-testid="done-checkout-button" onClick={closeDialog}>Done</Button>}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+      <Panel className="p-0 overflow-hidden">
+        {sessions.length === 0 ? (
+          <EmptyState message="No checkout sessions yet." testid="checkout-empty" />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Reference</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Link</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sessions.map((s) => (
+                  <TableRow key={s.id} data-testid={`checkout-row-${s.reference}`}>
+                    <TableCell className="font-mono text-xs">{s.reference}</TableCell>
+                    <TableCell className="text-right font-mono">{money(s.amount_minor, s.currency)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{s.description || "—"}</TableCell>
+                    <TableCell><StatusBadge status={s.status} /></TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{new Date(s.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" data-testid={`copy-link-${s.reference}`} onClick={() => copy(checkoutUrl(s.token), s.id)}>
+                        {copiedId === s.id ? <Check className="h-3.5 w-3.5 mr-1 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 mr-1" />} Copy
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}

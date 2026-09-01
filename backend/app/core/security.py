@@ -41,3 +41,23 @@ def create_refresh_token(user_id: str) -> str:
 
 def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+
+
+import hashlib
+import secrets as _secrets
+
+
+def generate_api_key(prefix: str = "sk_test") -> tuple[str, str, str]:
+    """Return (plaintext, sha256_hash, last4). Plaintext is shown to the user once."""
+    raw = _secrets.token_urlsafe(24)
+    plaintext = f"{prefix}_{raw}"
+    key_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    return plaintext, key_hash, plaintext[-4:]
+
+
+def hash_api_key(plaintext: str) -> str:
+    return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+
+def generate_token(length: int = 24) -> str:
+    return _secrets.token_urlsafe(length)

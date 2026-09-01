@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Undo2 } from "lucide-react";
+import { Plus, Undo2, Download } from "lucide-react";
 import { toast } from "sonner";
-import { api, money, formatApiError } from "@/lib/api";
+import { api, money, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -74,7 +74,12 @@ export default function Payments() {
         title="Payments"
         subtitle="Create and inspect transactions processed through the payment engine."
         action={
-          <Dialog open={open} onOpenChange={setOpen}>
+          <div className="flex gap-2">
+            <Button variant="outline" data-testid="export-payments-csv"
+              onClick={() => downloadCsv("/reports/export/payments.csv", { tenant_id: selectedTenantId }, "payments.csv")}>
+              <Download className="h-4 w-4 mr-2" /> Export CSV
+            </Button>
+            <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button data-testid="new-payment-button"><Plus className="h-4 w-4 mr-2" /> New Payment</Button>
             </DialogTrigger>
@@ -109,6 +114,7 @@ export default function Payments() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
 

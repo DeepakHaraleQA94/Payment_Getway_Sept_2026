@@ -10,7 +10,7 @@ from app.core.audit import record_audit
 from app.models.payment import Payment, Refund
 from app.providers.base import ChargeRequest
 from app.providers.registry import get_provider
-from app.services import fee_engine, ledger_service, risk_service
+from app.services import fee_engine, ledger_service, risk_service, webhook_service
 
 
 async def create_payment(
@@ -93,6 +93,12 @@ async def create_payment(
         actor_email=getattr(actor, "email", None),
         changes={"status": payment.status, "amount_minor": amount_minor, "currency": currency},
     )
+    await webhook_service.dispatch(
+        db, tenant_id=tenant_id,
+        event="payment.succeeded" if result.success else "payment.failed",
+        data={"payment_id": str(payment.id), "reference": reference, "amount_minor": amount_minor,
+              "currency": currency, "status": payment.status, "provider_txn_id": payment.provider_txn_id},
+    )
     await db.commit()
     await db.refresh(payment)
     return payment
@@ -151,6 +157,12 @@ async def create_refund(
         tenant_id=tenant_id, actor_id=str(getattr(actor, "id", "")) or None,
         actor_email=getattr(actor, "email", None),
         changes={"status": refund.status, "amount_minor": amount_minor},
+    )
+    await webhook_service.dispatch(
+        db, tenant_id=tenant_id,
+        event="refund.succeeded" if result.success else "refund.failed",
+        data={"refund_id": str(refund.id), "payment_id": str(payment.id),
+              "amount_minor": amount_minor, "currency": payment.currency, "status": refund.status},
     )
     await db.commit()
     await db.refresh(refund)

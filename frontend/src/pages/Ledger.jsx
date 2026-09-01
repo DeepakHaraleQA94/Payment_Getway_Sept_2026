@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
-import { api, money } from "@/lib/api";
+import { api, money, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, EmptyState } from "@/components/common";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function Ledger() {
@@ -20,7 +22,14 @@ export default function Ledger() {
 
   return (
     <div data-testid="ledger-page">
-      <PageHeader title="Balance & Ledger" subtitle="Double-entry balances and the append-only ledger." />
+      <PageHeader title="Balance & Ledger" subtitle="Double-entry balances and the append-only ledger."
+        action={
+          <Button variant="outline" data-testid="export-ledger-csv"
+            onClick={() => downloadCsv("/reports/export/ledger.csv", { tenant_id: selectedTenantId }, "ledger.csv")}>
+            <Download className="h-4 w-4 mr-2" /> Export CSV
+          </Button>
+        }
+      />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-6">
         {accounts.length === 0 && (
           <Panel><EmptyState message="No ledger accounts yet." testid="ledger-accounts-empty" /></Panel>
