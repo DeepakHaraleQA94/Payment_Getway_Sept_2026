@@ -175,8 +175,11 @@ def test_boundaries_disabled(admin_client):
 
 
 def test_live_provider_blocked(admin_client, acme_tenant_id):
+    # LIVE is architecturally supported but gated by plugin capability: the sandbox-only Mock
+    # plugin cannot be configured for the live environment (rejected 400). LIVE is NOT
+    # permanently removed from the architecture.
     r = admin_client.post(
         f"/api/providers?tenant_id={acme_tenant_id}",
-        json={"provider_key": "acme_live_test", "display_name": "Acme Gateway", "mode": "live"},
+        json={"provider_key": "mock", "display_name": "Mock Gateway", "mode": "live"},
     )
     assert r.status_code == 400

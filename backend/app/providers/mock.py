@@ -123,6 +123,9 @@ class MockProvider(PaymentProviderAdapter):
     supported_currencies = ["USD", "EUR", "GBP", "INR", "AED"]
     payment_methods = ["card", "bank", "wallet"]
     supported_flows = [PaymentFlow.DIRECT, PaymentFlow.INTENT, PaymentFlow.QR]
+    # Reference/test provider: SANDBOX only — never live (no real money). A real plugin
+    # would declare ["sandbox", "live"] and supply its own live building blocks.
+    supported_environments = ["sandbox"]
 
     def __init__(self) -> None:
         self._auth = _MockAuthentication()
@@ -139,14 +142,18 @@ class MockProvider(PaymentProviderAdapter):
     def mode(self) -> str:
         return "sandbox"
 
-    def configuration(self) -> ProviderConfiguration:
-        return ProviderConfiguration(provider_key=self.key, mode="sandbox", options={"sandbox": True})
+    def configuration(self, environment: str | None = None) -> ProviderConfiguration:
+        return ProviderConfiguration(provider_key=self.key, mode=environment or "sandbox",
+                                     options={"sandbox": True})
 
     def supports_webhooks(self) -> bool:
         return True
 
-    def health_check(self) -> dict:
-        return self._health.check(self.configuration())
+    def health_check(self, environment: str | None = None) -> dict:
+        env = environment or "sandbox"
+        if not self.supports_environment(env):
+            return {"status": "unsupported_environment", "environment": env}
+        return self._health.check(self.configuration(env))
 
     # ---- standardized contract ----
     def create_payment(self, req: ChargeRequest) -> ProviderResult:
@@ -184,7 +191,8 @@ class MockProvider(PaymentProviderAdapter):
         raw = self._client.request("POST", "/qr", payload=self._req.to_qr(req))
         return ProviderQR(qr_id=raw["id"], qr_payload=raw["qr_payload"], raw={"sandbox": True})
 
-    def verify_callback(self, payload: bytes, headers: dict) -> ProviderWebhookEvent:
+    def verify_callback(self, payload: bytes, headers: dict,
+                        environment: str | None = None) -> ProviderWebhookEvent:
         return self._callback.verify_and_parse(payload, headers)
 
     def reconcile(self, provider_txn_id: str) -> ProviderReconciliation:

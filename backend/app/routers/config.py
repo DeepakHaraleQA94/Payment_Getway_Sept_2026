@@ -98,10 +98,11 @@ async def provider_capabilities(provider_key: str, user=Depends(get_current_user
 
 
 @router.get("/providers/{provider_key}/health")
-async def provider_health(provider_key: str, user=Depends(get_current_user)):
+async def provider_health(provider_key: str, environment: str | None = None,
+                          user=Depends(get_current_user)):
     if not has_provider(provider_key):
         raise HTTPException(status_code=404, detail="Unknown provider")
-    return {"provider": provider_key, **get_provider(provider_key).health_check()}
+    return {"provider": provider_key, **get_provider(provider_key).health_check(environment)}
 
 
 def _require_plugin(provider_key: str):
@@ -161,13 +162,15 @@ async def provider_reconcile(provider_key: str, provider_txn_id: str,
 
 @router.post("/providers/{provider_key}/webhook")
 async def provider_inbound_webhook(provider_key: str, request: Request,
+                                   environment: str | None = None,
                                    db: AsyncSession = Depends(get_db)):
     """Generic inbound provider webhook (provider -> CloudPay). Public, no session auth.
 
-    The core contains NO provider-specific logic: it delegates verification + translation
-    to the plugin's `verify_webhook`, which returns a normalized event, then reconciles the
-    matching payment's status via the state machine. Never posts ledger entries — the
-    synchronous charge flow owns financial mutations.
+    The core contains NO provider-specific logic: it delegates verification + translation to
+    the plugin's `verify_callback` (environment-aware — e.g. distinct sandbox/live signing),
+    which returns a normalized event, then reconciles the matching payment's status via the
+    state machine. Never posts ledger entries — the synchronous charge flow owns financial
+    mutations.
     """
     if not has_provider(provider_key):
         raise HTTPException(status_code=404, detail="Unknown provider")
@@ -177,7 +180,7 @@ async def provider_inbound_webhook(provider_key: str, request: Request,
 
     payload = await request.body()
     try:
-        event = plugin.verify_callback(payload, dict(request.headers))
+        event = plugin.verify_callback(payload, dict(request.headers), environment)
     except NotImplementedError:
         raise HTTPException(status_code=400, detail="Provider does not implement callbacks")
     except Exception:
@@ -224,13 +227,21 @@ async def add_provider(body: ProviderCreate, tenant_id: str | None = None, db: A
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    # Environment-aware gating (LIVE is NOT permanently blocked): a provider can be configured
+    # for an environment only if its plugin declares support for it. The Mock reference plugin
+    # supports SANDBOX only, so LIVE stays safe today; an authorized real plugin declaring
+    # live support could be configured later WITHOUT any core change.
+    if not has_provider(body.provider_key):
+        raise HTTPException(status_code=400, detail="Unknown provider plugin")
+    plugin = get_provider(body.provider_key)
+    if not plugin.supports_environment(body.mode):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{body.provider_key}' does not support the '{body.mode}' environment")
     exists = await db.execute(select(PaymentProvider).where(
         PaymentProvider.tenant_id == tid, PaymentProvider.provider_key == body.provider_key))
     if exists.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Provider already configured")
-    if body.mode == "live":
-        raise HTTPException(status_code=400,
-                            detail="Live mode disabled until an authorized production provider is configured")
     prov = PaymentProvider(tenant_id=tid, created_by=str(user.id), **body.model_dump())
     db.add(prov)
     await db.flush()

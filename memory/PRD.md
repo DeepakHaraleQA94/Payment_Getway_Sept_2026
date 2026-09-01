@@ -126,6 +126,28 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   credential_ref -> secret store); intent/QR are exercised via endpoints but not yet surfaced
   in the hosted-checkout UI (DIRECT flow only) — to be wired when a real provider needs them.
 
+## Environment abstraction (2026-06) — sandbox + live are both first-class
+- Made the generic provider contract ENVIRONMENT-AWARE without introducing any real provider.
+  Both SANDBOX and LIVE are permanent, first-class parts of the architecture; LIVE is never
+  hard-removed or permanently blocked. This phase still executes only in SANDBOX via Mock.
+- contracts.py: added `ProviderEnvironment` enum (sandbox/live), `EnvironmentConfig` (per-env
+  enable + credential *reference*, names only), and extended `ProviderConfiguration` with
+  `enabled` + `environments` and helpers (`for_environment`, `is_enabled`, `credential_ref_for`)
+  supporting separate TEST and LIVE credential references.
+- base.py: `supported_environments`, `supports_environment()`, capabilities now expose
+  `supported_environments` + `live_supported`, and `health_check(environment)` +
+  `verify_callback(..., environment)` are environment-aware.
+- mock.py: reference plugin declares `supported_environments=["sandbox"]` (sandbox-only) — a
+  real plugin would add "live" with its own building blocks.
+- config.py: replaced the permanent LIVE hard-block with CAPABILITY-BASED gating — a provider
+  can be configured for an environment only if its plugin declares support (unknown plugin or
+  unsupported environment -> 400). `/health` and `/webhook` accept an optional `environment`.
+- Frontend: Providers subtitle no longer says "live disabled"; reflects per-plugin environments.
+- Tests: 107 backend tests pass serially (`pytest tests/ -n0`), incl. new environment tests.
+- Deferred (SRD order): Provider Account Management (persistent per-tenant, per-environment
+  provider records + secret-store credential binding + DB migration), execution-time
+  environment selection, UPI Intent/QR real flows, real provider, routing/failover.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from app.providers.contracts import (  # noqa: F401
     CallbackHandler,
     ChargeRequest,
+    EnvironmentConfig,
     ErrorHandler,
     HealthCheck,
     PaymentFlow,
@@ -27,6 +28,7 @@ from app.providers.contracts import (  # noqa: F401
     ProviderAuthentication,
     ProviderConfiguration,
     ProviderCredentialField,
+    ProviderEnvironment,
     ProviderError,
     ProviderIntent,
     ProviderQR,
@@ -48,10 +50,13 @@ class PaymentProviderAdapter(ABC):
     supported_currencies: list[str] = []
     payment_methods: list[str] = ["card"]
     supported_flows: list[PaymentFlow] = [PaymentFlow.DIRECT]
+    # Environments this plugin can operate in. Both sandbox and live are permanently part of
+    # the architecture; a plugin opts into live by including it here (with proper safeguards).
+    supported_environments: list[str] = [ProviderEnvironment.SANDBOX.value]
 
     # ---- configuration + sandbox/live abstraction ----
-    def configuration(self) -> ProviderConfiguration:
-        return ProviderConfiguration(provider_key=self.key, mode=self.mode)
+    def configuration(self, environment: str | None = None) -> ProviderConfiguration:
+        return ProviderConfiguration(provider_key=self.key, mode=environment or self.mode)
 
     @property
     def mode(self) -> str:
@@ -66,6 +71,9 @@ class PaymentProviderAdapter(ABC):
     def configured(self) -> bool:
         """Whether the plugin has the credentials/config it needs to operate."""
         return True
+
+    def supports_environment(self, environment: str) -> bool:
+        return environment in self.supported_environments
 
     # ---- capability / credential / health discovery ----
     def required_credentials(self) -> list[ProviderCredentialField]:
@@ -92,6 +100,8 @@ class PaymentProviderAdapter(ABC):
             "supported_currencies": self.supported_currencies,
             "payment_methods": self.payment_methods,
             "supported_flows": [f.value for f in self.supported_flows],
+            "supported_environments": list(self.supported_environments),
+            "live_supported": ProviderEnvironment.LIVE.value in self.supported_environments,
             "supports_refund": self.supports_refund(),
             "supports_webhooks": self.supports_webhooks(),
             "supports_intent": self.supports_intent(),
@@ -103,8 +113,12 @@ class PaymentProviderAdapter(ABC):
             ],
         }
 
-    def health_check(self) -> dict:
-        return {"status": "up" if self.configured else "unconfigured", "mode": self.mode}
+    def health_check(self, environment: str | None = None) -> dict:
+        env = environment or self.mode
+        status = "up" if self.configured else "unconfigured"
+        if not self.supports_environment(env):
+            status = "unsupported_environment"
+        return {"status": status, "environment": env}
 
     # ---- standardized payment contract ----
     @abstractmethod
@@ -124,10 +138,13 @@ class PaymentProviderAdapter(ABC):
     def generate_qr(self, req: ChargeRequest) -> ProviderQR:
         raise ProviderError("unsupported_flow", "qr flow not supported by this provider")
 
-    def verify_callback(self, payload: bytes, headers: dict) -> ProviderWebhookEvent:
+    def verify_callback(self, payload: bytes, headers: dict,
+                        environment: str | None = None) -> ProviderWebhookEvent:
         """Verify signature and translate a raw provider payload into a normalized event.
 
-        Plugins that support callbacks override this. Must raise on invalid signatures.
+        Plugins that support callbacks override this. `environment` allows environment-specific
+        callback handling (e.g. distinct sandbox/live signing secrets). Must raise on invalid
+        signatures.
         """
         raise NotImplementedError("This provider does not implement inbound callbacks")
 
@@ -141,5 +158,6 @@ class PaymentProviderAdapter(ABC):
     def charge(self, req: ChargeRequest) -> ProviderResult:
         return self.create_payment(req)
 
-    def verify_webhook(self, payload: bytes, headers: dict) -> ProviderWebhookEvent:
-        return self.verify_callback(payload, headers)
+    def verify_webhook(self, payload: bytes, headers: dict,
+                       environment: str | None = None) -> ProviderWebhookEvent:
+        return self.verify_callback(payload, headers, environment)

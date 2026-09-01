@@ -56,7 +56,7 @@ export default function Providers() {
     <div data-testid="providers-page">
       <PageHeader
         title="Provider Adapters"
-        subtitle="Pluggable payment providers. Live mode stays disabled until authorized."
+        subtitle="Pluggable payment providers. Sandbox and live environments are both supported per plugin."
         action={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>

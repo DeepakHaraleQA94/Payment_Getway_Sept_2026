@@ -29,6 +29,17 @@ class PaymentFlow(str, Enum):
     QR = "qr"           # QR / push payment (e.g. bank/UPI-style), no card data
 
 
+class ProviderEnvironment(str, Enum):
+    """Execution environments a provider plugin can operate in.
+
+    Both are first-class and permanent parts of the architecture. This phase executes only
+    in SANDBOX; LIVE is architecturally supported for authorized real plugins in a later phase
+    and is NEVER hard-removed.
+    """
+    SANDBOX = "sandbox"   # TEST / non-real-money
+    LIVE = "live"         # PRODUCTION / real-money (guarded; requires an authorized plugin)
+
+
 # --------------------------- normalized request/result types ---------------------------
 @dataclass
 class ChargeRequest:
@@ -116,16 +127,53 @@ class ProviderError(Exception):
 
 
 @dataclass
+class EnvironmentConfig:
+    """Per-environment settings for a provider: explicit enable + a credential *reference*.
+
+    Holds NO raw secrets — only an opaque reference/name to a secret store. Separate entries
+    let a provider carry independent TEST and LIVE credentials and enable flags.
+    """
+    environment: str                      # sandbox | live
+    enabled: bool = False
+    credential_ref: str | None = None
+
+
+@dataclass
 class ProviderConfiguration:
-    """Per-provider configuration. Holds a credential *reference*, never raw secret values."""
+    """Per-provider configuration with independent sandbox/live environment settings.
+
+    Existing fields (mode/credential_ref) describe the ACTIVE environment for backward
+    compatibility; `environments` carries the full per-environment picture. Credential
+    references are names only — never raw secret values.
+    """
     provider_key: str
-    mode: str = "sandbox"                 # sandbox | live
-    credential_ref: str | None = None     # opaque reference/name to a secret store
+    mode: str = "sandbox"                  # active environment: sandbox | live
+    credential_ref: str | None = None      # active-environment credential reference
     options: dict = field(default_factory=dict)
+    enabled: bool = True                   # active-environment enable flag
+    environments: dict[str, EnvironmentConfig] = field(default_factory=dict)
 
     @property
     def is_live(self) -> bool:
         return self.mode == "live"
+
+    @property
+    def active_environment(self) -> str:
+        return self.mode
+
+    def for_environment(self, environment: str | None = None) -> EnvironmentConfig:
+        env = environment or self.mode
+        if env in self.environments:
+            return self.environments[env]
+        # Fall back to the active-environment view when a discrete entry is absent.
+        return EnvironmentConfig(environment=env, enabled=self.enabled,
+                                 credential_ref=self.credential_ref)
+
+    def is_enabled(self, environment: str | None = None) -> bool:
+        return self.for_environment(environment).enabled
+
+    def credential_ref_for(self, environment: str | None = None) -> str | None:
+        return self.for_environment(environment).credential_ref
 
 
 # --------------------------- building-block interfaces ---------------------------

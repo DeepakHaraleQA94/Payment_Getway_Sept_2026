@@ -149,11 +149,24 @@ def test_capabilities_and_health_endpoints(admin):
     assert admin.get("/api/providers/stripe/capabilities").status_code == 404
 
 
-def test_post_provider_rejects_live_mode(admin, acme):
-    body = {"provider_key": "acme_live", "display_name": "Acme LIVE",
+def test_live_is_gated_by_capability_not_permanently_blocked(admin, acme):
+    # LIVE is architecturally supported but gated: the Mock plugin (sandbox-only) cannot be
+    # configured for live. The rejection must be capability-based (mention the environment),
+    # NOT a permanent "live disabled/blocked" wall.
+    body = {"provider_key": "mock", "display_name": "Mock LIVE",
             "mode": "live", "priority": 10, "enabled": True, "config": {}}
     r = admin.post(f"/api/providers?tenant_id={acme}", json=body)
-    assert r.status_code == 400 and "live" in r.text.lower()
+    assert r.status_code == 400
+    detail = r.text.lower()
+    assert "live" in detail and "environment" in detail
+    assert "disabled" not in detail and "blocked" not in detail
+
+
+def test_unknown_provider_plugin_rejected(admin, acme):
+    body = {"provider_key": "nonexistent_x", "display_name": "X", "mode": "sandbox",
+            "priority": 10, "enabled": True, "config": {}}
+    r = admin.post(f"/api/providers?tenant_id={acme}", json=body)
+    assert r.status_code == 400 and "unknown provider" in r.text.lower()
 
 
 def test_generic_inbound_webhook_reconciles_via_contract(admin, acme):
@@ -279,4 +292,65 @@ def test_status_and_reconcile_endpoints(admin, acme):
 def test_flow_endpoints_reject_unknown_provider(admin):
     assert admin.post("/api/providers/stripe/intent", json={"amount_minor": 100}).status_code == 404
     assert admin.post("/api/providers/stripe/qr", json={"amount_minor": 100}).status_code == 404
+
+
+
+# ----------------------------- environment abstraction (unit) -----------------------------
+def test_capabilities_expose_supported_environments():
+    caps = MockProvider().capabilities()
+    # Mock is the sandbox-only reference plugin.
+    assert caps["supported_environments"] == ["sandbox"]
+    assert caps["live_supported"] is False
+
+
+def test_supports_environment():
+    p = MockProvider()
+    assert p.supports_environment("sandbox") is True
+    assert p.supports_environment("live") is False
+
+
+def test_environment_aware_health_check():
+    p = MockProvider()
+    assert p.health_check("sandbox")["status"] in ("up",)
+    assert p.health_check("live")["status"] == "unsupported_environment"
+
+
+def test_provider_configuration_environment_helpers():
+    from app.providers.contracts import EnvironmentConfig, ProviderConfiguration
+    cfg = ProviderConfiguration(
+        provider_key="mock", mode="sandbox",
+        environments={
+            "sandbox": EnvironmentConfig("sandbox", enabled=True, credential_ref="ref_test"),
+            "live": EnvironmentConfig("live", enabled=False, credential_ref="ref_live"),
+        },
+    )
+    # Separate test/live credential references + independent enable flags.
+    assert cfg.credential_ref_for("sandbox") == "ref_test"
+    assert cfg.credential_ref_for("live") == "ref_live"
+    assert cfg.is_enabled("sandbox") is True
+    assert cfg.is_enabled("live") is False
+    # Credential fields never carry raw secret values (references only).
+    assert cfg.for_environment("live").credential_ref == "ref_live"
+
+
+def test_live_environment_is_defined_not_removed():
+    # The architecture must keep LIVE as a first-class environment (never hard-removed).
+    from app.providers.contracts import ProviderEnvironment
+    assert ProviderEnvironment.LIVE.value == "live"
+    assert ProviderEnvironment.SANDBOX.value == "sandbox"
+
+
+# ----------------------------- environment abstraction (HTTP) -----------------------------
+def test_health_endpoint_is_environment_aware(admin):
+    ok = admin.get("/api/providers/mock/health?environment=sandbox")
+    assert ok.status_code == 200 and ok.json()["status"] in ("up",)
+    live = admin.get("/api/providers/mock/health?environment=live")
+    assert live.status_code == 200 and live.json()["status"] == "unsupported_environment"
+
+
+def test_capabilities_endpoint_exposes_environments(admin):
+    r = admin.get("/api/providers/mock/capabilities")
+    assert r.status_code == 200
+    assert r.json()["supported_environments"] == ["sandbox"]
+    assert r.json()["live_supported"] is False
 
