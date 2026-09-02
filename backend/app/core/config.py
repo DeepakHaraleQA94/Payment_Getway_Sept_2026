@@ -49,8 +49,13 @@ class Settings:
         self.integration_proxy_url: str = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() \
             or "https://integrations.emergentagent.com"
 
-        # Email adapter (provider-agnostic; noop until a provider is configured)
-        self.email_provider: str = os.environ.get("EMAIL_PROVIDER", "noop").lower()
+        # Email adapter (provider-agnostic; noop until a provider is configured).
+        # When RESEND_API_KEY is present the Resend adapter auto-activates (unless EMAIL_PROVIDER
+        # is set explicitly). Keys come from env only — never hardcoded.
+        self.resend_api_key: str = os.environ.get("RESEND_API_KEY", "")
+        self.sender_email: str = os.environ.get("SENDER_EMAIL", "")
+        default_provider = "resend" if self.resend_api_key else "noop"
+        self.email_provider: str = os.environ.get("EMAIL_PROVIDER", default_provider).lower()
 
         # Webhook retry policy (configurable)
         self.webhook_max_attempts: int = int(os.environ.get("WEBHOOK_MAX_ATTEMPTS", "8"))

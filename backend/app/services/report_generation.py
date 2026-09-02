@@ -152,13 +152,18 @@ async def generate_report(db: AsyncSession, *, tenant: Tenant, report_type: str 
     freqs = ecfg.get("frequencies") or []
     should_send = bool(ecfg.get("enabled")) and (report_type == "custom" or report_type in freqs)
     if should_send:
-        attachment_url = (f"/api/reports/scheduled/download/{stored_file.id}"
-                          if (stored_file and ecfg.get("attach_csv", True)) else None)
+        attach = None
+        attachment_url = None
+        if stored_file and ecfg.get("attach_csv", True):
+            # Attach the CSV bytes directly (already in memory) so the recipient gets the file.
+            attach = {"filename": filename, "content": content, "content_type": "text/csv"}
+            attachment_url = f"/api/reports/scheduled/download/{stored_file.id}"
         email_result = email_service.send_email(
             to=recipient,
             subject=f"CloudPay {report_type} report — {label}",
             body=f"Your {report_type} payments & settlements report for {tenant.name} ({label}) is ready.",
             attachment_url=attachment_url,
+            attachment=attach,
         )
         email_status = email_result.get("status", "skipped_no_provider")
     else:

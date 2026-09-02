@@ -142,9 +142,9 @@ def test_email_settings_roundtrip_and_report_gating(admin, tenant):
     assert upd["enabled"] is True and upd["frequencies"] == ["weekly"]
     assert upd["recipient_email"] == "ops@rep.test"
 
-    # weekly is enabled -> adapter attempts send (noop => skipped_no_provider)
+    # weekly is enabled -> adapter attempts send (noop => skipped_no_provider, resend => sent)
     wk = admin.post(f"/api/reports/scheduled/run?tenant_id={tenant}&report_type=weekly").json()
-    assert wk["email_status"] == "skipped_no_provider"
+    assert wk["email_status"] in ("skipped_no_provider", "sent")
     # daily not in frequencies -> skipped_frequency
     dl = admin.post(f"/api/reports/scheduled/run?tenant_id={tenant}&report_type=daily").json()
     assert dl["email_status"] == "skipped_frequency"

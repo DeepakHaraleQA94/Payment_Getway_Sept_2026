@@ -563,3 +563,22 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   settlement-import-history, settlement-import-history-row.
 - Tests: test_financial_integrity.py now 27 (history records a committed run + excludes dry-run;
   history requires settlement.manage -> 403). All pass. Verified via UI screenshot.
+
+## Real Email Delivery via Resend (2026-06, LIVE)
+- Email is no longer mocked. Provider-agnostic adapter (`email_service.py`) gains a
+  `ResendEmailProvider` that auto-activates when RESEND_API_KEY + SENDER_EMAIL are set (env-only;
+  EMAIL_PROVIDER=resend). Falls back to noop when unset. Sends fail gracefully (logs, never raises).
+- Wired flows (no existing behavior rewritten — only the log-only stubs now route to the adapter):
+  * Password reset + email verification + password-changed notice — via `notification_service.notify`
+    (routes events carrying a recipient email to `send_email`; reset link is public, works w/o auth).
+  * Scheduled/on-demand reports — `report_generation` now attaches the CSV bytes directly
+    (base64) to the Resend email when attach_csv is on (plus a secure download link).
+- Config: RESEND_API_KEY + SENDER_EMAIL live ONLY in backend/.env (gitignored). Never in source,
+  logs, UI or API responses. Sender/From = finance@vortexglobal.info.
+- SDK: resend==2.42.0 (added to requirements.txt).
+- Live-tested (real sends, message ids returned):
+  * POST /api/auth/forgot-password -> "email sent via resend" (reset link).
+  * POST /api/reports/scheduled/run (daily, attach_csv) -> email_status "sent" with CSV attachment.
+- Regression: test_reports_and_alert_history + test_financial_integrity = 38 pass. One existing test
+  that hard-coded the old mock status (skipped_no_provider) was made provider-agnostic
+  (accepts "sent" | "skipped_no_provider") to reflect the now-enabled real delivery.
