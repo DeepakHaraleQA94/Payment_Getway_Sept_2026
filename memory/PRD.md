@@ -551,3 +551,15 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   settlement-preview-confirm, settlement-preview-cancel.
 - Tests: test_financial_integrity.py now 25 (added dry-run classifies-without-persisting + confirm
   persists). All pass. Verified via UI screenshot (1 new / 1 duplicate / 1 error).
+
+## Settlement Import History (2026-06)
+- New `GET /api/settlements/imports?tenant_id=&limit=` (settlement.manage, tenant-isolated) returns
+  the log of past settlement-file imports — when, actor_email (who ran it), filename, and the
+  new/duplicate/error tallies. Sourced from the existing append-only audit trail
+  (action='settlement.import'); NO migration, no new table, no secrets. Dry-run previews are NOT
+  logged (they write no audit entry).
+- Frontend: Settlements screen shows an "Import history" panel (When / By / File / New / Duplicate /
+  Errors, color-coded) that refreshes after each committed import. data-testids:
+  settlement-import-history, settlement-import-history-row.
+- Tests: test_financial_integrity.py now 27 (history records a committed run + excludes dry-run;
+  history requires settlement.manage -> 403). All pass. Verified via UI screenshot.

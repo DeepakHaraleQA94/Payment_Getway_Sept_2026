@@ -133,6 +133,33 @@ async def import_settlements(file: UploadFile = File(...), tenant_id: str | None
     return summary
 
 
+@router.get("/settlements/imports")
+async def settlement_import_history(tenant_id: str | None = None, limit: int = 50,
+                                    db: AsyncSession = Depends(get_db),
+                                    user=Depends(require_permission("settlement.manage"))):
+    """Log of past settlement-file imports for the tenant (who ran it + new/duplicate/error tallies).
+
+    Sourced from the append-only audit trail (action='settlement.import'); no secrets exposed.
+    """
+    from app.models.platform import AuditLog
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    res = await db.execute(
+        select(AuditLog).where(AuditLog.tenant_id == tid, AuditLog.action == "settlement.import")
+        .order_by(AuditLog.created_at.desc()).limit(min(max(limit, 1), 200)))
+    entries = res.scalars().all()
+    return [{
+        "id": str(e.id),
+        "created_at": e.created_at.isoformat(),
+        "actor_email": e.actor_email,
+        "filename": (e.changes or {}).get("filename"),
+        "created": (e.changes or {}).get("created", 0),
+        "duplicates": (e.changes or {}).get("duplicates", 0),
+        "errors": (e.changes or {}).get("errors", 0),
+    } for e in entries]
+
+
 @router.get("/reports/payments-by-status")
 async def report_payments(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
                           user=Depends(get_current_user)):

@@ -387,6 +387,31 @@ class TestSettlementImport:
         assert any(s["reference"] == f"PRV-A-{r}" for s in listed2)
 
 
+    def test_import_history_records_run(self, admin_client, acme_id):
+        r = uuid.uuid4().hex[:8].upper()
+        csv = self._csv([f"HIST-{r},USD,500,0,500,5\n"])
+        admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                          files={"file": (f"hist-{r}.csv", csv, "text/csv")})
+        hist = admin_client.get(f"/api/settlements/imports?tenant_id={acme_id}").json()
+        entry = next((h for h in hist if h["filename"] == f"hist-{r}.csv"), None)
+        assert entry is not None
+        assert entry["created"] == 1 and entry["duplicates"] == 0 and entry["errors"] == 0
+        assert entry["actor_email"] == ADMIN_EMAIL
+        # Dry-run preview must NOT create a history entry
+        admin_client.post(f"/api/settlements/import?tenant_id={acme_id}&dry_run=true",
+                          files={"file": (f"dry-{r}.csv", csv, "text/csv")})
+        hist2 = admin_client.get(f"/api/settlements/imports?tenant_id={acme_id}").json()
+        assert not any(h["filename"] == f"dry-{r}.csv" for h in hist2)
+
+    def test_import_history_requires_permission(self, admin_client, acme_id):
+        ops = _client(_login("ops-admin@cloudpay.io", ADMIN_PASSWORD))
+        try:
+            resp = ops.get(f"/api/settlements/imports?tenant_id={acme_id}")
+            assert resp.status_code == 403
+        finally:
+            ops.close()
+
+
 # ============================ SECURITY: NO SECRET LEAK ============================
 class TestNoSecretLeak:
     def test_financial_endpoints_never_leak_secrets(self, admin_client, acme_id):

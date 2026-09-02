@@ -25,6 +25,7 @@ export default function Settlements() {
   const [importing, setImporting] = useState(false);
   const [preview, setPreview] = useState(null); // { items, created_count, duplicate_count, error_count }
   const [pendingFile, setPendingFile] = useState(null);
+  const [imports, setImports] = useState([]);
   const fileInputRef = useRef(null);
   const tenant = tenants.find((t) => t.id === selectedTenantId);
 
@@ -33,7 +34,14 @@ export default function Settlements() {
     const { data } = await api.get("/settlements", { params: { tenant_id: selectedTenantId } });
     setRows(data);
   }, [selectedTenantId]);
-  useEffect(() => { load(); }, [load]);
+  const loadImports = useCallback(async () => {
+    if (!selectedTenantId) return;
+    try {
+      const { data } = await api.get("/settlements/imports", { params: { tenant_id: selectedTenantId } });
+      setImports(data);
+    } catch { /* history is best-effort */ }
+  }, [selectedTenantId]);
+  useEffect(() => { load(); loadImports(); }, [load, loadImports]);
 
   const generate = async () => {
     setBusy(true);
@@ -93,7 +101,7 @@ export default function Settlements() {
       if (data.error_count) parts.push(`${data.error_count} error(s)`);
       toast.success(`Import complete — ${parts.join(", ")}`);
       setPreview(null); setPendingFile(null);
-      load();
+      load(); loadImports();
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
     finally { setImporting(false); }
   };
@@ -218,6 +226,38 @@ export default function Settlements() {
           </div>
         )}
       </Panel>
+
+      {imports.length > 0 && (
+        <Panel className="p-0 overflow-hidden mt-6" data-testid="settlement-import-history">
+          <div className="px-4 py-3 border-b border-border text-sm font-medium">Import history</div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>File</TableHead>
+                  <TableHead className="text-right">New</TableHead>
+                  <TableHead className="text-right">Duplicate</TableHead>
+                  <TableHead className="text-right">Errors</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {imports.map((h) => (
+                  <TableRow key={h.id} data-testid="settlement-import-history-row">
+                    <TableCell className="font-mono text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs">{h.actor_email || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{h.filename || "—"}</TableCell>
+                    <TableCell className="text-right font-mono text-emerald-400">{h.created}</TableCell>
+                    <TableCell className="text-right font-mono text-amber-400">{h.duplicates}</TableCell>
+                    <TableCell className="text-right font-mono text-red-400">{h.errors}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }
