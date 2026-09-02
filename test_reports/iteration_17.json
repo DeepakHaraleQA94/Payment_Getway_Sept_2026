@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 17 backend-only verification of Super Admin email rotation from admin@cloudpay.io to finance@vortexglobal.info. Created /app/backend/tests/test_iter17_superadmin_email_rotation.py (9 tests, all passing) against the public preview URL. Verified: (1) POST /api/auth/login with finance@vortexglobal.info + password from /app/memory/test_credentials.md returns 200 with httpOnly access_token cookie; (2) POST /api/auth/login with old admin@cloudpay.io returns 401 (Invalid credentials) — no duplicate super admin; (3) GET /api/auth/me returns email=finance@vortexglobal.info, is_superadmin=true, permissions contains '*' — RBAC preserved; (4) POST /api/auth/forgot-password with existing email returns 200 and exact generic message 'If an account exists, a reset link has been sent.'; (5) Same call with a clearly non-existent email (nobody-xyz@example.com) returns byte-identical 200 body — no account enumeration; (6) GET /api/superadmin/overview returns 200 for this user — Super Admin control plane accessible; (7) GET /api/superadmin/users listing shows exactly ONE super admin (is_superadmin=true) at finance@vortexglobal.info, and admin@cloudpay.io is NOT present; (8) Sweep across /login, /me, /forgot-password response bodies contains no bcrypt hashes ($2a$/$2b$/$2y$), no 'password_hash'/'hashed_password' keys, no 'reset_token', and no plaintext password. Note: as flagged by main agent, the notification adapter is log-only (no real email provider), so reset emails are NOT delivered — this is a known limitation confirmed, not a defect.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter17_superadmin_email_rotation.py",
+    "/app/test_reports/pytest/iter17_superadmin_email.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth.py forgot-password correctly returns a fixed generic message with 200 for both existing and non-existent emails — no enumeration side-channel observed in status/body.",
+    "Login response does not include access_token in JSON body (only httpOnly cookie), which matches the security posture documented in /app/memory/test_credentials.md; test uses cookie -> Authorization: Bearer to exercise protected endpoints.",
+    "Email validation via Pydantic EmailStr rejects reserved TLDs (e.g. .invalid) with 422 before hitting the handler. That means a malformed but non-existent email would look different from a well-formed non-existent one to an attacker probing the endpoint. Not a leak of account existence (still no enumeration between existing vs non-existing well-formed emails), but worth noting for pen-test parity."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter17_superadmin_email_rotation.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "Super Admin email: finance@vortexglobal.info; password read from /app/memory/test_credentials.md (not echoed). Old admin@cloudpay.io no longer valid.",
+  "seed_data_creation": "None. Only read-only auth + superadmin overview calls (plus rate-limited forgot-password calls that only log via noop adapter).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Super Admin has been rotated to finance@vortexglobal.info; admin@cloudpay.io no longer exists in the DB. Login returns access_token as httpOnly cookie only (not in JSON) — read response.cookies['access_token'] and pass as 'Authorization: Bearer <tok>'. The Pydantic email validator rejects reserved TLDs like .invalid with 422; use example.com when crafting a non-existent-but-syntactically-valid email. Notification/email adapter is a log-only noop; reset tokens are logged, never returned by the API and never delivered. Superadmin users listing endpoint: GET /api/superadmin/users (returns items list with is_superadmin flag).",
+  "rca of the issue": "N/A — verification pass only; no defects found."
+}

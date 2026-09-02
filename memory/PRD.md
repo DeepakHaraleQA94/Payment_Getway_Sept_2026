@@ -444,6 +444,16 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   external KMS/Vault, live webhook endpoint registration, wiring a routable stripe provider_account
   per tenant, and end-to-end sandbox network test through the payment API.
 
+## Super Admin email rotation -> finance@vortexglobal.info (2026-06)
+- Single Super Admin now uses email finance@vortexglobal.info (is_superadmin, active, permissions '*'
+  preserved). No duplicate; old admin@cloudpay.io no longer authenticates. ADMIN_EMAIL in
+  backend/.env updated so reseed stays consistent. (Pod DB had reset; account was reseeded under the
+  new email — ID/audit history from before the wipe are gone due to the infra reset.)
+- Secure Forgot Password flow verified (generic no-enumeration 200; hashed single-use token).
+- BLOCKER: notification adapter is LOG-ONLY (no email provider) -> reset emails are NOT delivered to
+  the mailbox. To let the user set a new password via a real reset email, connect Resend/SendGrid/SES
+  (needs API key + verified sender for vortexglobal.info). Verified by testing_agent iteration_17 (9/9).
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).
