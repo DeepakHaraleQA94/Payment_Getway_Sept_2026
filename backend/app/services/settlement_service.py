@@ -69,26 +69,35 @@ async def generate_settlement(db: AsyncSession, *, tenant_id, currency: str,
     return settlement
 
 
-async def import_settlements(db: AsyncSession, *, tenant_id, actor, rows: list[dict]) -> dict:
+async def import_settlements(db: AsyncSession, *, tenant_id, actor, rows: list[dict],
+                             dry_run: bool = False) -> dict:
     """Import provider settlement rows from an uploaded file (batch-only, NO ledger credit).
 
     Idempotent: a row whose (tenant_id, provider_settlement_ref) already exists is SKIPPED as a
     duplicate — re-uploading the same file never creates a second settlement (no double record).
     Uses per-row SAVEPOINTs so a duplicate/error never discards successfully-created rows.
     Amounts are taken verbatim from the file (the provider is the source of truth).
+
+    When `dry_run` is True, NOTHING is inserted: rows are only classified (new / duplicate / error)
+    so the operator can preview the outcome before committing.
     """
     created: list[dict] = []
     duplicates: list[str] = []
     errors: list[dict] = []
+    items: list[dict] = []
     seen: set[str] = set()
 
     for i, row in enumerate(rows, start=1):
         ref = str(row.get("provider_settlement_ref") or "").strip()
         if not ref:
             errors.append({"row": i, "error": "provider_settlement_ref is required"})
+            items.append({"row": i, "provider_settlement_ref": "", "status": "error",
+                          "error": "provider_settlement_ref is required"})
             continue
         if ref in seen:
             duplicates.append(ref)
+            items.append({"row": i, "provider_settlement_ref": ref, "status": "duplicate",
+                          "error": "duplicate reference within this file"})
             continue
         try:
             currency = (str(row.get("currency") or "USD").strip().upper())[:3]
@@ -99,16 +108,31 @@ async def import_settlements(db: AsyncSession, *, tenant_id, actor, rows: list[d
             count = int(row.get("txn_count") or 0)
         except (ValueError, TypeError):
             errors.append({"row": i, "error": "invalid numeric value"})
+            items.append({"row": i, "provider_settlement_ref": ref, "status": "error",
+                          "error": "invalid numeric value"})
             continue
         if gross < 0 or fees < 0 or count < 0:
             errors.append({"row": i, "error": "amounts and count must be non-negative"})
+            items.append({"row": i, "provider_settlement_ref": ref, "status": "error",
+                          "error": "amounts and count must be non-negative"})
             continue
+
+        detail = {"row": i, "provider_settlement_ref": ref, "currency": currency,
+                  "gross_minor": gross, "fees_minor": fees, "net_minor": net, "txn_count": count}
 
         existing = await db.execute(select(Settlement).where(
             Settlement.tenant_id == tenant_id, Settlement.provider_settlement_ref == ref))
         if existing.scalar_one_or_none() is not None:
             duplicates.append(ref)
             seen.add(ref)
+            items.append({**detail, "status": "duplicate",
+                          "error": "already imported (would be skipped)"})
+            continue
+
+        if dry_run:
+            seen.add(ref)
+            created.append({"provider_settlement_ref": ref, "currency": currency, "net_minor": net})
+            items.append({**detail, "status": "new"})
             continue
 
         settlement = Settlement(
@@ -124,11 +148,13 @@ async def import_settlements(db: AsyncSession, *, tenant_id, actor, rows: list[d
             # Concurrent import inserted the same reference first — idempotent skip.
             duplicates.append(ref)
             seen.add(ref)
+            items.append({**detail, "status": "duplicate", "error": "already imported (skipped)"})
             continue
         seen.add(ref)
         created.append({"id": str(settlement.id), "provider_settlement_ref": ref,
                         "currency": currency, "net_minor": net})
+        items.append({**detail, "status": "new", "id": str(settlement.id)})
 
-    return {"created": created, "duplicates": duplicates, "errors": errors,
+    return {"created": created, "duplicates": duplicates, "errors": errors, "items": items,
             "created_count": len(created), "duplicate_count": len(duplicates),
-            "error_count": len(errors)}
+            "error_count": len(errors), "dry_run": dry_run}

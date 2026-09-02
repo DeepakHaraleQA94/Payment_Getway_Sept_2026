@@ -90,12 +90,14 @@ async def settlement_import_template(user=Depends(require_permission("settlement
 
 @router.post("/settlements/import")
 async def import_settlements(file: UploadFile = File(...), tenant_id: str | None = None,
-                             db: AsyncSession = Depends(get_db),
+                             dry_run: bool = False, db: AsyncSession = Depends(get_db),
                              user=Depends(require_permission("settlement.manage"))):
     """Upload a provider settlement CSV and reconcile it idempotently (batch-only, no ledger credit).
 
     Re-uploading the same file is safe: rows whose provider_settlement_ref already exists are
-    skipped as duplicates. Tenant-isolated; requires settlement.manage.
+    skipped as duplicates. With `dry_run=true`, nothing is written — the response classifies each
+    row (new / duplicate / error) so operators can preview before committing. Tenant-isolated;
+    requires settlement.manage.
     """
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
@@ -116,7 +118,12 @@ async def import_settlements(file: UploadFile = File(...), tenant_id: str | None
     if len(rows) > MAX_IMPORT_ROWS:
         raise HTTPException(status_code=400, detail=f"Too many rows (max {MAX_IMPORT_ROWS})")
 
-    summary = await settlement_service.import_settlements(db, tenant_id=tid, actor=user, rows=rows)
+    summary = await settlement_service.import_settlements(
+        db, tenant_id=tid, actor=user, rows=rows, dry_run=dry_run)
+    if dry_run:
+        # Preview only: no persistence, no audit trail entry.
+        await db.rollback()
+        return summary
     await record_audit(db, action="settlement.import", resource_type="settlement", resource_id=None,
                        tenant_id=tid, actor_id=str(user.id), actor_email=user.email,
                        changes={"filename": file.filename, "created": summary["created_count"],

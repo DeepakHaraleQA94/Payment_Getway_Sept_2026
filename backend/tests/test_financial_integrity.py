@@ -364,6 +364,28 @@ class TestSettlementImport:
         finally:
             ops.close()
 
+    def test_dry_run_previews_without_persisting(self, admin_client, acme_id):
+        r = uuid.uuid4().hex[:8].upper()
+        csv = self._csv([f"PRV-A-{r},USD,1000000,29000,971000,120\n",
+                         f"PRV-A-{r},USD,1,1,0,1\n",          # in-file duplicate
+                         f"PRV-B-{r},USD,x,0,0,1\n"])          # invalid number
+        # Preview: classifies rows, writes nothing
+        pv = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}&dry_run=true",
+                               files={"file": ("s.csv", csv, "text/csv")}).json()
+        assert pv["dry_run"] is True
+        assert pv["created_count"] == 1 and pv["duplicate_count"] == 1 and pv["error_count"] == 1
+        statuses = [it["status"] for it in pv["items"]]
+        assert statuses == ["new", "duplicate", "error"]
+        # Nothing persisted -> the settlement is not listed yet
+        listed = admin_client.get(f"/api/settlements?tenant_id={acme_id}").json()
+        assert not any(s["reference"] == f"PRV-A-{r}" for s in listed)
+        # Confirm (no dry_run) actually creates the single new row
+        real = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                                 files={"file": ("s.csv", csv, "text/csv")}).json()
+        assert real["created_count"] == 1
+        listed2 = admin_client.get(f"/api/settlements?tenant_id={acme_id}").json()
+        assert any(s["reference"] == f"PRV-A-{r}" for s in listed2)
+
 
 # ============================ SECURITY: NO SECRET LEAK ============================
 class TestNoSecretLeak:

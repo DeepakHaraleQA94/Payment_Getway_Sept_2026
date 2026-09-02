@@ -538,3 +538,16 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   invalid-row reported/others created, missing-column 400, RBAC 403). All pass. Verified via UI + curl.
 - DEFERRED (user will provide creds separately): Real Email Delivery via Resend (API key + verified
   sender domain e.g. no-reply@vortexglobal.info). Currently email is log-only MOCKED.
+
+## Settlement Import — Dry-Run Preview (2026-06)
+- Import is now a two-step preview-then-commit flow. `POST /api/settlements/import?dry_run=true`
+  classifies every CSV row (new / duplicate / error) WITHOUT writing anything (session rolled back,
+  no audit entry); `import_settlements(..., dry_run=True)` returns an `items` list with per-row
+  detail + counts. The real commit call (no dry_run) inserts only the new rows (unchanged idempotent
+  behaviour, still batch-only, no ledger credit).
+- Frontend: picking a file opens a Preview dialog (color-coded New/Duplicate/Error, net + txns per
+  row, counts). "Confirm import (N)" is disabled when there are zero new rows and commits the same
+  file. data-testids: settlement-preview-dialog, settlement-preview-counts, settlement-preview-row-*,
+  settlement-preview-confirm, settlement-preview-cancel.
+- Tests: test_financial_integrity.py now 25 (added dry-run classifies-without-persisting + confirm
+  persists). All pass. Verified via UI screenshot (1 new / 1 duplicate / 1 error).

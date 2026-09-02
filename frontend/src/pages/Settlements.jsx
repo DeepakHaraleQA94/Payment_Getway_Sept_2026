@@ -1,21 +1,30 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Banknote, Download, Upload, FileDown } from "lucide-react";
+import { Banknote, Download, Upload, FileDown, CheckCircle2, Copy, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, money, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 
 const IMPORT_TEMPLATE =
   "provider_settlement_ref,currency,gross_minor,fees_minor,net_minor,txn_count\n" +
   "PSP-2026-06-01,USD,1000000,29000,971000,120\n";
+
+const PREVIEW_META = {
+  new: { label: "New", cls: "text-emerald-400", Icon: CheckCircle2 },
+  duplicate: { label: "Duplicate", cls: "text-amber-400", Icon: Copy },
+  error: { label: "Error", cls: "text-red-400", Icon: AlertTriangle },
+};
 
 export default function Settlements() {
   const { selectedTenantId, tenants } = useAuth();
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [preview, setPreview] = useState(null); // { items, created_count, duplicate_count, error_count }
+  const [pendingFile, setPendingFile] = useState(null);
   const fileInputRef = useRef(null);
   const tenant = tenants.find((t) => t.id === selectedTenantId);
 
@@ -49,14 +58,32 @@ export default function Settlements() {
     window.URL.revokeObjectURL(url);
   };
 
+  // Step 1: pick a file -> dry-run preview (nothing is written).
   const onFilePicked = async (e) => {
     const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file
+    e.target.value = "";
     if (!file) return;
     setImporting(true);
     try {
       const form = new FormData();
       form.append("file", file);
+      const { data } = await api.post("/settlements/import", form, {
+        params: { tenant_id: selectedTenantId, dry_run: true },
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setPendingFile(file);
+      setPreview(data);
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setImporting(false); }
+  };
+
+  // Step 2: confirm -> real import (dry_run=false) commits only the new rows.
+  const confirmImport = async () => {
+    if (!pendingFile) return;
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", pendingFile);
       const { data } = await api.post("/settlements/import", form, {
         params: { tenant_id: selectedTenantId },
         headers: { "Content-Type": "multipart/form-data" },
@@ -65,10 +92,13 @@ export default function Settlements() {
       if (data.duplicate_count) parts.push(`${data.duplicate_count} duplicate (skipped)`);
       if (data.error_count) parts.push(`${data.error_count} error(s)`);
       toast.success(`Import complete — ${parts.join(", ")}`);
+      setPreview(null); setPendingFile(null);
       load();
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
     finally { setImporting(false); }
   };
+
+  const closePreview = () => { setPreview(null); setPendingFile(null); };
 
   return (
     <div data-testid="settlements-page">
@@ -84,7 +114,7 @@ export default function Settlements() {
             </Button>
             <Button variant="outline" data-testid="settlement-import-button"
               onClick={() => fileInputRef.current?.click()} disabled={importing || !selectedTenantId}>
-              <Upload className="h-4 w-4 mr-2" /> {importing ? "Importing…" : "Import File"}
+              <Upload className="h-4 w-4 mr-2" /> {importing && !preview ? "Reading…" : "Import File"}
             </Button>
             <Button variant="outline" data-testid="export-settlements-csv"
               onClick={() => downloadCsv("/reports/export/settlements.csv", { tenant_id: selectedTenantId }, "settlements.csv")}>
@@ -94,6 +124,66 @@ export default function Settlements() {
           </div>
         }
       />
+
+      <Dialog open={!!preview} onOpenChange={(o) => { if (!o) closePreview(); }}>
+        <DialogContent className="max-w-3xl" data-testid="settlement-preview-dialog">
+          <DialogHeader>
+            <DialogTitle>Import preview — dry run</DialogTitle>
+            <DialogDescription>
+              Nothing has been saved yet. Review the rows below, then confirm to import the new ones.
+              Duplicates and errors are skipped.
+            </DialogDescription>
+          </DialogHeader>
+          {preview && (
+            <>
+              <div className="flex gap-4 text-sm" data-testid="settlement-preview-counts">
+                <span className="text-emerald-400">{preview.created_count} new</span>
+                <span className="text-amber-400">{preview.duplicate_count} duplicate</span>
+                <span className="text-red-400">{preview.error_count} error(s)</span>
+              </div>
+              <div className="max-h-[45vh] overflow-auto border border-border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
+                      <TableHead>Txns</TableHead>
+                      <TableHead>Outcome</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {preview.items.map((it, idx) => {
+                      const meta = PREVIEW_META[it.status] || PREVIEW_META.error;
+                      return (
+                        <TableRow key={idx} data-testid={`settlement-preview-row-${it.status}`}>
+                          <TableCell className="font-mono text-xs">{it.provider_settlement_ref || `(row ${it.row})`}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {it.net_minor != null ? money(it.net_minor, it.currency || "USD") : "—"}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{it.txn_count ?? "—"}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center gap-1 text-xs ${meta.cls}`}>
+                              <meta.Icon className="h-3.5 w-3.5" /> {meta.label}
+                              {it.error ? <span className="text-muted-foreground ml-1">· {it.error}</span> : null}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closePreview} data-testid="settlement-preview-cancel">Cancel</Button>
+            <Button onClick={confirmImport} disabled={importing || !preview || preview.created_count === 0}
+              data-testid="settlement-preview-confirm">
+              {importing ? "Importing…" : `Confirm import (${preview?.created_count || 0})`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Panel className="p-0 overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState message="No settlements generated yet." testid="settlements-empty" />
