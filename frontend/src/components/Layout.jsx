@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Building2, CreditCard, Undo2, Plug, Percent,
   BookOpen, Banknote, Users, ToggleLeft, ScrollText, Activity, Zap, LogOut,
-  Link2, KeyRound, Webhook, FileText, ShieldCheck, HeartPulse,
+  Link2, KeyRound, Webhook, FileText, ShieldCheck, HeartPulse, Landmark,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -14,6 +14,8 @@ const NAV = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard, testid: "nav-overview" },
   { to: "/dashboard/payments", label: "Payments", icon: CreditCard, testid: "nav-payments", perm: "payment.create" },
   { to: "/dashboard/refunds", label: "Refunds", icon: Undo2, testid: "nav-refunds", feature: "refunds", perm: "refund.create" },
+  { to: "/dashboard/reversals", label: "Reversals", icon: Undo2, testid: "nav-reversals", perm: "payment.reverse" },
+  { to: "/dashboard/utr", label: "UTR Console", icon: Landmark, testid: "nav-utr", perm: "utr.verify" },
   { to: "/dashboard/ledger", label: "Balance & Ledger", icon: BookOpen, testid: "nav-ledger" },
   { to: "/dashboard/settlements", label: "Settlements", icon: Banknote, testid: "nav-settlements" },
   { to: "/dashboard/checkout", label: "Hosted Checkout", icon: Link2, testid: "nav-checkout", feature: "checkout", perm: "checkout.manage" },

@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend-only testing of the new Reversal & UTR Operator Console over existing backend APIs. All 6 acceptance criteria verified end-to-end on the preview URL. Backend was NOT tested (as instructed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "tests_executed": {
+    "reversal_authorized_super_admin": "PASS — Logged in as finance@vortexglobal.info, switched tenant to Acme Commerce via tenant-selector -> tenant-option-acme. Eligible for reversal table listed 8 payments (statuses succeeded). Clicked reverse-button-<id>, confirm dialog (reverse-confirm-dialog) opened with reverse-reason-input; entered reason and clicked reverse-confirm. Toast 'Reversal succeeded — $96.80 unwound' displayed, list refreshed, reversed payment appeared in reversals-history (reversal-done-row-<id>). POST /api/payments/{id}/reverse worked.",
+    "reversal_unauthorized_ops_admin": "PASS — Logged in as ops-admin@cloudpay.io: nav-reversals hidden from sidebar. Direct navigation to /dashboard/reversals rendered reversals-no-permission panel with correct copy. No reverse-button elements present.",
+    "utr_list_and_review_authorized": "PASS — GET /api/payments/utr/list loaded pending rows (utr-pending-row-<id>). Approve (utr-approve-<id>) opened utr-review-dialog with prefilled utr-expected-amount and utr-expected-currency. utr-review-confirm produced 'UTR confirmed' toast; row moved to Resolved. Reject flow (utr-reject-<id>) also opened the dialog and rejected successfully with 'UTR rejected' toast + Resolved section shows reason 'test reject'.",
+    "utr_submission": "PASS — utr-open-submit opens utr-submit-dialog. Filled utr-submit-ref (unique ACMETEST...), utr-submit-amount (250000), utr-submit-currency defaulted USD, submitted via utr-submit-confirm. Success toast 'UTR submitted for review' shown, list refreshed, new row visible in Pending review. POST /api/payments/utr sent correct tenant_id param.",
+    "utr_unauthorized_ops_admin": "PASS — nav-utr hidden from sidebar for ops-admin. Direct navigation to /dashboard/utr rendered utr-no-permission panel.",
+    "tenant_isolation": "PASS — With 7 tenants in selector, switching between Acme Commerce and FinTest 676fda76 produced distinctly different eligible/UTR lists (Acme had 8 eligible payments + 3+ reversed; FinTest showed different UTR data). Console consistently sends tenant_id of the selected tenant."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Reversals.jsx: UI-side REVERSIBLE filter mirrors server; documented as UX-only — good, backend re-validates. No issue.",
+    "UtrConsole.jsx: submitUtr sends tenant_id as query param (?tenant_id=...) while other endpoints on this page send it in params — consistent. If a payment_id is provided but blank-stripped correctly. Good.",
+    "Minor UX: In UtrConsole submit dialog, form.currency defaults to 'USD' hardcoded. For non-USD tenants this may require the user to change every time. Consider defaulting to tenant.default_currency. (Non-blocking.)",
+    "Minor UX: reverse-confirm-dialog does not auto-clear when target changes rapidly; not an issue in practice.",
+    "Both pages correctly reload data via `load()` after mutations and gate on hasPermission. selectedTenantId is guarded before API calls (returns early)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested", "frontend": "100%"},
+  "test_credentials": "Super admin finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy ; Restricted ops-admin@cloudpay.io / CloudPay-DutqTuzcS1jL64hHJrCy — both worked as documented in /app/memory/test_credentials.md.",
+  "seed_data_creation": "Submitted a couple of TEST UTRs (ACMETEST<ts> / UTRTEST<ts>) into Acme + FinTest tenants for pending/approve/reject flows. One Acme payment was reversed (PAY-5460d26c…).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New pages Reversals.jsx and UtrConsole.jsx are wired to existing backend endpoints and behave correctly. Tenant selector on /dashboard/* topbar exposes data-testid tenant-selector and tenant-option-<slug>. Note: on /superadmin route the tenant selector is NOT rendered — sidebar/nav is different; testing must navigate to /dashboard/reversals or /dashboard/utr first to reach the standard Layout that contains the tenant selector. Rate-limited login (30/min per IP + lockout) — reuse sessions when possible.",
+  "rca of the issue": "N/A — no defects found."
+}

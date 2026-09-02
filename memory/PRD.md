@@ -582,3 +582,18 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Regression: test_reports_and_alert_history + test_financial_integrity = 38 pass. One existing test
   that hard-coded the old mock status (skipped_no_provider) was made provider-agnostic
   (accepts "sent" | "skipped_no_provider") to reflect the now-enabled real delivery.
+
+## Reversal & UTR Operator Console (2026-06, FRONTEND-ONLY)
+- New operator UI on EXISTING, unchanged backend APIs. No backend/DB/migration changes.
+- New pages: frontend/src/pages/Reversals.jsx, frontend/src/pages/UtrConsole.jsx. New routes in
+  App.js (/dashboard/reversals, /dashboard/utr) + two perm-gated nav items in Layout.jsx
+  (Reversals=payment.reverse, UTR Console=utr.verify).
+- Reversal Console: GET /api/payments -> eligible (authorized/captured/succeeded), confirm dialog
+  with reason + destructive action -> POST /api/payments/{id}/reverse; Reversed-transactions history.
+- UTR Console: GET /api/payments/utr/list; Approve/Reject -> POST /api/payments/utr/{id}/review
+  (approve dialog collects verified amount/currency per the API contract); Submit UTR ->
+  POST /api/payments/utr. Actions gated by utr.verify / utr.submit.
+- Loading/empty/success/error states, responsive tables, confirmation dialogs, no-permission panels
+  mirroring backend RBAC. Permissions reused (no new grants): payment.reverse, utr.verify, utr.submit.
+- Testing: testing_agent (iteration_19.json) — all 6 scenarios PASS 100%. Backend regression
+  test_financial_integrity = 27/27 still pass. No migration; no existing functionality modified.
