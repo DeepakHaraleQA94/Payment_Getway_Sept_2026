@@ -136,18 +136,23 @@ def test_insufficient_permission_denied(tenant_user):
                   json={"email": f"z{uuid.uuid4().hex[:6]}@t.com", "password": "Password123"}).status_code == 403
 
 
-def test_feature_entitlement_enforced_on_backend(admin, two_tenants):
+def test_feature_entitlement_enforced_on_backend(admin, tenant_user, two_tenants):
     acme, other = two_tenants
-    # Create a payment in 'other', then disable the 'refunds' feature and confirm the API rejects refunds.
-    p = admin.post(f"/api/payments?tenant_id={other}",
-                   json={"reference": "FEAT", "amount_minor": 4000, "currency": "USD", "provider_key": "mock"}).json()
+    c, _ = tenant_user  # non-superadmin user bound to 'other'
+    # Create a payment in 'other', then disable the 'refunds' feature for that tenant.
+    p = c.post(f"/api/payments?tenant_id={other}",
+               json={"reference": "FEAT", "amount_minor": 4000, "currency": "USD", "provider_key": "mock"}).json()
     ff = admin.post(f"/api/features?tenant_id={other}",
                     json={"key": "refunds", "name": "Refunds", "enabled": False}).json()
-    r = admin.post(f"/api/payments/{p['id']}/refunds", json={"amount_minor": 1000})
-    assert r.status_code == 403  # feature disabled -> backend rejects
-    # Re-enable and confirm it now works.
+    # Tenant user is blocked by the disabled feature.
+    r = c.post(f"/api/payments/{p['id']}/refunds", json={"amount_minor": 1000})
+    assert r.status_code == 403
+    # Super Admin retains platform-level access and bypasses the tenant feature restriction.
+    rs = admin.post(f"/api/payments/{p['id']}/refunds", json={"amount_minor": 1000})
+    assert rs.status_code == 200
+    # Re-enable and confirm the tenant user can refund again.
     admin.patch(f"/api/features/{ff['id']}", json={"enabled": True})
-    r2 = admin.post(f"/api/payments/{p['id']}/refunds", json={"amount_minor": 1000})
+    r2 = c.post(f"/api/payments/{p['id']}/refunds", json={"amount_minor": 1000})
     assert r2.status_code == 200
 
 

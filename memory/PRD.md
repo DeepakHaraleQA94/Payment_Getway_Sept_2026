@@ -398,6 +398,30 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   to the first tenant on a hard page reload (in-app navigation preserves it); all data stays correct.
 - Phase status: COMPLETE.
 
+## 4-Level Admin Hierarchy + Super Admin Control Plane (2026-06)
+- Extended existing IAM (no parallel RBAC): Level-1 Super Admin (is_superadmin), Level-2 Platform
+  Admin (platform-tenant user, is_superadmin=FALSE, EXACT granted permissions, no wildcard),
+  Level-3/4 tenant admin/users. Single login redirects Super Admins to /superadmin, others to
+  /dashboard. New /api/superadmin/* control plane (require_superadmin): overview, platform-admin
+  CRUD + per-admin permission grant + set-password + suspend, tenant feature control. Guardrails:
+  never sets is_superadmin, refuses to modify a Super Admin, platform admins 403 on /superadmin/*.
+- Customer feature control via existing require_feature on refunds/checkout/reports/webhooks/
+  api_keys/providers (403 when disabled; Super Admin bypasses; absence defaults enabled so nothing
+  breaks). Frontend nav hides disabled features + permission-gated items. New SuperAdmin.jsx pages
+  (overview, admins, tenants, features, roles) wired to real APIs.
+- Tests: test_superadmin_control_plane.py (guard, exact-permission, escalation guardrails,
+  set-password/suspend, feature roundtrip); updated feature-entitlement test for superadmin bypass.
+  Full suite 183 passed serially. Frontend verified rendering. No migration needed.
+
+## Production-Readiness Baseline Audit (2026-06)
+- Verified subsystems end-to-end; 183 tests pass. Money handled as integer minor units (no floats);
+  refund gated by refundable-state + amount cap; payment state machine enforces ALLOWED_TRANSITIONS;
+  idempotency claims payment before dispatch; webhook HMAC-SHA256 + retry/backoff; provider errors
+  normalized (ProviderError); secret store Fernet + credential_ref; no PAN/CVV stored.
+- Missing/gated for real-money (documented, NOT built this phase): real PSP adapter, external KMS/
+  Vault, reversals, UTR handling, full reconciliation double-credit guards, settlement idempotency
+  hardening — all require external creds / regulatory approval.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).
