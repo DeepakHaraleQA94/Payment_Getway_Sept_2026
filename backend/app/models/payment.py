@@ -167,3 +167,63 @@ class Refund(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_refund_tenant_idem"),
         CheckConstraint("amount_minor > 0", name="ck_refund_amount_pos"),
     )
+
+
+class Reversal(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
+    """Immutable per-payment reversal record.
+
+    A reversal fully unwinds an eligible original transaction (references it, one per payment).
+    It never creates money: any compensating ledger impact only reverses a credit that already
+    existed for the original payment. Tenant-isolated and idempotent.
+    """
+    __tablename__ = "reversals"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("payments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # pending|succeeded|failed
+    provider_ref: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    __table_args__ = (
+        # One reversal per payment (prevents duplicate reversal even without an idempotency key).
+        UniqueConstraint("payment_id", name="uq_reversal_payment"),
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_reversal_tenant_idem"),
+    )
+
+
+class UtrSubmission(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
+    """Bank-reference (UTR) verification record.
+
+    A UTR is a bank-transfer reference submitted to claim credit for an out-of-band transfer.
+    The platform NEVER credits solely because a UTR was entered: a submission starts in
+    `under_review` and is credited only after an authorized manual confirmation that matches the
+    expected amount/currency (and, when linked, an eligible payment). No fake bank verification.
+    """
+    __tablename__ = "utr_submissions"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Optional link to an expected pending/authorized payment to match against.
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    utr: Mapped[str] = mapped_column(String(140), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="under_review")  # under_review|confirmed|rejected
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    __table_args__ = (
+        # A given UTR can be used at most once per tenant (no duplicate use, no multi-credit).
+        UniqueConstraint("tenant_id", "utr", name="uq_utr_tenant_ref"),
+        CheckConstraint("amount_minor > 0", name="ck_utr_amount_pos"),
+    )

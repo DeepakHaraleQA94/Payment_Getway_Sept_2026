@@ -117,5 +117,12 @@ class Settlement(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     txn_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Stable provider settlement identifier (e.g. payout/settlement id from the PSP file/API).
+    # When present, processing is idempotent: a repeated file/response for the same reference
+    # returns the existing settlement rather than creating a second one (no double-credit).
+    provider_settlement_ref: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
-    __table_args__ = (Index("ix_settlements_tenant_status", "tenant_id", "status"),)
+    __table_args__ = (
+        Index("ix_settlements_tenant_status", "tenant_id", "status"),
+        UniqueConstraint("tenant_id", "provider_settlement_ref", name="uq_settlement_tenant_provider_ref"),
+    )

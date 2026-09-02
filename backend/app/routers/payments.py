@@ -8,9 +8,19 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
-from app.models.payment import Payment, Refund
-from app.schemas import PaymentCreate, PaymentOut, RefundCreate, RefundOut
-from app.services import payment_engine
+from app.models.payment import Payment, Refund, UtrSubmission
+from app.schemas import (
+    PaymentCreate,
+    PaymentOut,
+    RefundCreate,
+    RefundOut,
+    ReversalOut,
+    ReverseCreate,
+    UtrOut,
+    UtrReview,
+    UtrSubmitCreate,
+)
+from app.services import payment_engine, reversal_service, utr_service
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -78,4 +88,65 @@ async def list_refunds(tenant_id: str | None = None, db: AsyncSession = Depends(
     tid = resolve_tenant_id(user, tenant_id)
     res = await db.execute(select(Refund).where(Refund.tenant_id == tid)
                            .order_by(Refund.created_at.desc()).limit(200))
+    return res.scalars().all()
+
+
+@router.post("/{payment_id}/reverse", response_model=ReversalOut)
+async def reverse_payment(payment_id: uuid.UUID, body: ReverseCreate, db: AsyncSession = Depends(get_db),
+                          user=Depends(require_permission("payment.reverse"))):
+    """Fully reverse an eligible original transaction. Authorized (payment.reverse), tenant-isolated,
+    idempotent (one reversal per payment), and never creates money."""
+    payment = await db.get(Payment, payment_id)
+    if not payment or (not user.is_superadmin and payment.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Payment not found")
+    try:
+        reversal = await reversal_service.create_reversal(
+            db, tenant_id=payment.tenant_id, actor=user, payment=payment,
+            reason=body.reason, idempotency_key=body.idempotency_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return reversal
+
+
+@router.post("/utr", response_model=UtrOut)
+async def submit_utr(body: UtrSubmitCreate, tenant_id: str | None = None,
+                     db: AsyncSession = Depends(get_db),
+                     user=Depends(require_permission("utr.submit"))):
+    """Submit a bank UTR to claim credit. Never credits on submission — starts in 'under_review'."""
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    try:
+        submission = await utr_service.submit_utr(
+            db, tenant_id=tid, actor=user, utr=body.utr, amount_minor=body.amount_minor,
+            currency=body.currency, payment_id=body.payment_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return submission
+
+
+@router.post("/utr/{submission_id}/review", response_model=UtrOut)
+async def review_utr(submission_id: uuid.UUID, body: UtrReview,
+                     db: AsyncSession = Depends(get_db),
+                     user=Depends(require_permission("utr.verify"))):
+    """Manually confirm or reject a UTR. Confirmation is the ONLY path that credits the ledger."""
+    submission = await db.get(UtrSubmission, submission_id)
+    if not submission or (not user.is_superadmin and submission.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="UTR submission not found")
+    try:
+        result = await utr_service.review_utr(
+            db, tenant_id=submission.tenant_id, actor=user, submission_id=submission_id,
+            decision=body.decision, expected_amount_minor=body.expected_amount_minor,
+            expected_currency=body.expected_currency, reason=body.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.get("/utr/list", response_model=list[UtrOut])
+async def list_utr(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+                   user=Depends(get_current_user)):
+    tid = resolve_tenant_id(user, tenant_id)
+    res = await db.execute(select(UtrSubmission).where(UtrSubmission.tenant_id == tid)
+                           .order_by(UtrSubmission.created_at.desc()).limit(200))
     return res.scalars().all()

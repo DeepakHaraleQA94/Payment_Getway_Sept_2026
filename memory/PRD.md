@@ -466,3 +466,55 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
 ## Next Tasks
 - Add real provider adapter(s) via integration_expert when keys are available.
 - Add tenant-scoped API key issuance + a hosted checkout endpoint.
+
+## Financial-Integrity Closure — Reversal, UTR, Refund/Settlement/Reconciliation Safety (2026-06)
+Scope-frozen task: close identified financial-integrity gaps WITHOUT rebuilding anything. Sandbox
+only; live stays disabled; emails still mocked; no provider-specific logic in core.
+
+### Gap analysis (before)
+- Reversal: MISSING entirely. UTR verification: MISSING entirely.
+- Cumulative refund cap existed but had a CONCURRENCY RACE (read cumulative from a stale in-memory
+  relationship, no row lock) → two concurrent refunds could over-refund.
+- Settlement: re-summed all payments each call; NO provider-settlement-ref idempotency.
+- Reconciliation (generic inbound webhook): already safe — status-only, posts no ledger entries,
+  idempotent (prev==status short-circuit). Verified + covered by a test; no code change.
+
+### Changes made (additive)
+- Migration b8f1c2a3d4e5 (additive; no resets): tables `reversals`, `utr_submissions`; column
+  `settlements.provider_settlement_ref` + unique (tenant_id, provider_settlement_ref).
+- payment_state: added terminal `reversed` state + REVERSIBLE set {authorized,captured,succeeded}
+  and transitions authorized/captured/succeeded -> reversed; `is_reversible()`.
+- reversal_service.create_reversal: row-locks the payment; one reversal per payment (unique +
+  idempotency_key); blocks non-reversible states and payments that already have refunds; posts a
+  compensating DEBIT equal ONLY to the credit that already existed (never creates money); reflects
+  at PSP via the generic provider.refund; sets payment=reversed; audited + webhook payment.reversed.
+- utr_service: submit -> `under_review` (NEVER credits on submission); manual review confirm/reject
+  under `utr.verify`; strict amount/currency matching (+ linked-payment status/amount/currency
+  match, payment must be pending/authorized); ledger credit (ref_type="utr") ONLY on confirm, once
+  (row lock + status guard = idempotent); unique (tenant_id, utr) blocks duplicate/multi-credit use.
+  No fabricated bank verification — verification is a manual admin action.
+- payment_engine.create_refund: now row-locks the payment and recomputes the cumulative refunded
+  total from the DB under the lock (closes the over-refund race). Cap/idempotency preserved.
+- settlement_service.generate_settlement: optional provider_settlement_ref -> idempotent (repeated
+  file/response/retry returns the existing settlement; no second credit; concurrency-safe via unique).
+- New permissions (least-privilege): payment.reverse, utr.submit, utr.verify (superadmin gets all).
+- Endpoints: POST /api/payments/{id}/reverse, POST /api/payments/utr,
+  POST /api/payments/utr/{id}/review, GET /api/payments/utr/list; /api/settlements/generate now
+  accepts provider_settlement_ref.
+
+### Tests
+- New tests/test_financial_integrity.py (19 tests, all pass): reversal valid/duplicate/idempotent/
+  invalid-lifecycle/unauthorized/cross-tenant; refund full+partial+over-refund/idempotent/CONCURRENT;
+  UTR submit+confirm-credits-once/duplicate/amount-mismatch/currency-mismatch/linked-status-mismatch/
+  unverified-no-credit/unauthorized-confirm; settlement idempotency; reconciliation rerun no
+  double-credit; no credential/secret leak.
+- Regression: core files pass in isolation (payment_state, payment_state_invariants,
+  provider_capability_routing, provider_accounts, financial_integrity, iter17 8/9). Full serial run
+  shows only ENVIRONMENTAL noise — (a) pre-existing stale hardcoded admin@cloudpay.io in
+  test_extended/test_commerce/test_stripe_adapter_integration (from the iteration-17 email rotation),
+  and (b) 429 rate-limiting/lockout from hammering /api/auth/login across 200+ serial tests. NOT
+  regressions from this task.
+
+### Infra note
+- Pod reset again on entry: PostgreSQL cluster down + cloudpay db/role wiped. Recreated role+db,
+  ran all migrations to head (b8f1c2a3d4e5), restarted supervisor; backend reseeded. Code unchanged.

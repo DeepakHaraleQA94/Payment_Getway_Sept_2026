@@ -4,20 +4,23 @@ Enforces that only valid transitions occur server-side. The set of states mirror
 models.base.PaymentStatus; this module does not introduce new states.
 """
 
-TERMINAL = {"failed", "refunded", "cancelled"}
+TERMINAL = {"failed", "refunded", "cancelled", "reversed"}
 REFUNDABLE = {"succeeded", "captured", "partially_refunded"}
+# States eligible for a full reversal (void an authorization or unwind a captured/settled charge).
+REVERSIBLE = {"authorized", "captured", "succeeded"}
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "created": {"pending", "authorized", "failed", "cancelled"},
     "pending": {"authorized", "captured", "succeeded", "failed", "cancelled"},
-    "authorized": {"captured", "succeeded", "cancelled", "failed"},
-    "captured": {"succeeded", "partially_refunded", "refunded"},
-    "succeeded": {"partially_refunded", "refunded"},
+    "authorized": {"captured", "succeeded", "cancelled", "failed", "reversed"},
+    "captured": {"succeeded", "partially_refunded", "refunded", "reversed"},
+    "succeeded": {"partially_refunded", "refunded", "reversed"},
     "partially_refunded": {"partially_refunded", "refunded"},
     # terminal states allow no further transitions
     "failed": set(),
     "refunded": set(),
     "cancelled": set(),
+    "reversed": set(),
 }
 
 
@@ -43,3 +46,7 @@ def can_transition(current: str, new: str) -> bool:
 
 def is_refundable(status: str) -> bool:
     return status in REFUNDABLE
+
+
+def is_reversible(status: str) -> bool:
+    return status in REVERSIBLE

@@ -263,6 +263,50 @@ class RefundOut(ORMBase):
     created_at: datetime
 
 
+# ---- Reversals ----
+class ReverseCreate(BaseModel):
+    reason: str | None = None
+    idempotency_key: str | None = None
+
+
+class ReversalOut(ORMBase):
+    id: uuid.UUID
+    payment_id: uuid.UUID
+    amount_minor: int
+    currency: str
+    status: str
+    reason: str | None
+    provider_ref: str | None = None
+    created_at: datetime
+
+
+# ---- UTR verification ----
+class UtrSubmitCreate(BaseModel):
+    utr: str = Field(min_length=4, max_length=140)
+    amount_minor: int = Field(gt=0)
+    currency: str = "USD"
+    payment_id: uuid.UUID | None = None
+
+
+class UtrReview(BaseModel):
+    decision: str  # confirm | reject
+    expected_amount_minor: int | None = None
+    expected_currency: str | None = None
+    reason: str | None = None
+
+
+class UtrOut(ORMBase):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    payment_id: uuid.UUID | None
+    utr: str
+    amount_minor: int
+    currency: str
+    status: str
+    reason: str | None
+    created_at: datetime
+
+
 # ---- Fee rules ----
 class FeeRuleCreate(BaseModel):
     name: str

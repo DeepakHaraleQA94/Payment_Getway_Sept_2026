@@ -3,7 +3,7 @@
 All financial mutations are server-side validated, tenant-isolated, idempotent
 (via idempotency_key) and audit-logged.
 """
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -238,9 +238,18 @@ async def create_refund(
     reason: str | None = None,
     idempotency_key: str | None = None,
 ) -> Refund:
+    # Serialize concurrent refunds for this payment with a row-level lock, then recompute the
+    # cumulative refunded total from the database UNDER THE LOCK. This closes the race where two
+    # concurrent refunds each read a stale total and both pass the cap (over-refund).
+    locked = await db.execute(
+        select(Payment).where(Payment.id == payment.id).with_for_update())
+    payment = locked.scalar_one()
+
     if not payment_state.is_refundable(payment.status):
         raise ValueError("Payment is not in a refundable state")
-    already = sum(r.amount_minor for r in payment.refunds if r.status == "succeeded")
+    already = (await db.execute(
+        select(func.coalesce(func.sum(Refund.amount_minor), 0)).where(
+            Refund.payment_id == payment.id, Refund.status == "succeeded"))).scalar_one()
     if amount_minor <= 0 or already + amount_minor > payment.amount_minor:
         raise ValueError("Refund exceeds refundable amount")
 

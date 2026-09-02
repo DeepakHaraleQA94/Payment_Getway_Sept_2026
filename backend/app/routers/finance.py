@@ -57,15 +57,18 @@ async def list_settlements(tenant_id: str | None = None, db: AsyncSession = Depe
 
 @router.post("/settlements/generate")
 async def generate_settlement(currency: str = "USD", tenant_id: str | None = None,
+                              provider_settlement_ref: str | None = None,
                               db: AsyncSession = Depends(get_db),
                               user=Depends(require_permission("settlement.manage"))):
     tid = resolve_tenant_id(user, tenant_id)
     if tid is None:
         raise HTTPException(status_code=400, detail="tenant_id required")
-    s = await settlement_service.generate_settlement(db, tenant_id=tid, currency=currency)
+    s = await settlement_service.generate_settlement(
+        db, tenant_id=tid, currency=currency, provider_settlement_ref=provider_settlement_ref)
     await db.commit()
     await db.refresh(s)
-    return {"id": str(s.id), "reference": s.reference, "net_minor": s.net_minor, "status": s.status}
+    return {"id": str(s.id), "reference": s.reference, "net_minor": s.net_minor, "status": s.status,
+            "provider_settlement_ref": s.provider_settlement_ref}
 
 
 @router.get("/reports/payments-by-status")
