@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 18 — verified reported 'Something went wrong' Super Admin login bug is RESOLVED end-to-end after backend+DB restore and admin reseed. Backend: created /app/backend/tests/test_iter18_login_bug_verification.py (7 tests, 7/7 passing) against the preview URL — POST /api/auth/login with finance@vortexglobal.info succeeds (200 + httpOnly access_token/refresh_token cookies + no secrets in body); wrong password and unknown email both return 401 with byte-identical JSON bodies (no account enumeration); GET /api/auth/me returns is_superadmin=true with permissions ['*']; GET /api/superadmin/overview returns 200. Frontend (Playwright on preview URL): (1) visiting /superadmin logged out redirects to /login; (2) wrong password stays on /login and shows a generic 'Invalid…' error — no 'Something went wrong' fallback; (3) unknown email stays on /login with same generic error — no 'Something went wrong'; (4) correct credentials navigate to /superadmin and the Super Admin Overview console renders (tiles: Customer Tenants, Platform Admins, Super Admins, Provider Accounts, Payments); (5) /api/auth/me from the authenticated browser returns is_superadmin=true, permissions ['*'], mfa_enabled=false; (6) revisiting /superadmin after login stays on /superadmin. No password/JWT/secret leaked in any auth response body. RBAC boundary intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_login_bug_verification.py",
+    "/app/test_reports/pytest/iter18.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Login flow now healthy: FE Login.jsx posts to /api/auth/login, backend returns 200 with httpOnly Secure SameSite=None cookies (access_token, refresh_token) and a user JSON free of secrets — matches security posture.",
+    "Both invalid-password and unknown-email paths return identical 401 JSON bodies (verified with r1.json() == r2.json()), so no timing-independent enumeration surface via response bodies.",
+    "Ops note: the reported 'Something went wrong' fallback in lib/api.js formatApiError is the correct UX when the network request has no response at all (backend/DB down). The RCA was environmental (sandbox pod restart), not a code bug. Consider adding a lightweight backend readiness probe surfaced on /login to give a clearer message the next time DB is unreachable, but this is optional polish, not a defect.",
+    "RBAC boundary on /superadmin route confirmed via redirect-to-/login when unauthenticated; still worth also asserting a non-superadmin platform admin gets bounced to /dashboard — not tested here because no such user is currently seeded in the fresh DB (only 1 Super Admin, 1 Platform Admin — the same super admin — per Overview tiles)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter18_login_bug_verification.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (10/10 assertions)"},
+  "test_credentials": "Super Admin email: finance@vortexglobal.info; password read from /app/memory/test_credentials.md (not echoed here).",
+  "seed_data_creation": "None. Read-only auth verification; two invalid-login attempts consumed brute-force counter budget (well under the 5/15min lockout).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login-bug RCA was environmental (backend + Postgres pod restarted, DB reseeded). Super admin creds unchanged: finance@vortexglobal.info / password in /app/memory/test_credentials.md. Backend returns access_token as httpOnly cookie only (not in JSON body); for pytest use response.cookies['access_token'] as Authorization: Bearer. Preview URL: https://pay-gateway-core.preview.emergentagent.com. Non-superadmin RBAC redirect (to /dashboard) could not be exercised — no such user currently exists; ask main agent to seed an ops-admin if that flow needs coverage. Login form selectors: input[type=email], input[type=password], button 'Sign in' (avoid data-testid*=password — it also matches the 'forgot-password-link' anchor).",
+  "rca of the issue": "Symptom: FE showed 'Something went wrong. Please try again.' on /login submit. RCA: sandbox pod restart brought backend down/DB reset; POST /api/auth/login therefore returned no response, tripping the network-error fallback in /app/frontend/src/lib/api.js formatApiError. After services + Postgres were restored and the single Super Admin was reseeded from ADMIN_EMAIL/ADMIN_PASSWORD (backend/.env), login returns 200 and the FE navigates to /superadmin. Mitigation applied by main agent: restart services + rerun seed; no code change needed. Recurrence mitigation: keep seed idempotent (already does password re-sync from ADMIN_PASSWORD on startup) and rely on supervisor to restart backend + postgresql on pod restart."
+}
