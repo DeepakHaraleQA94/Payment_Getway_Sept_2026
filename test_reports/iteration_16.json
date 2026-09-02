@@ -1,0 +1,30 @@
+{
+  "summary": "Backend verification of Stripe adapter addition (sandbox-only, live disabled) behind the generic PaymentProvider contract. Created /app/backend/tests/test_stripe_adapter_integration.py (11 tests) against the public preview URL. Results: 10 passed, 1 skipped (health returned 'unconfigured' because STRIPE_API_KEY is NOT present in the backend supervisor process env — endpoint itself responds 200 with no leakage). Verified: (1) GET /api/providers/available lists provider key 'stripe' with live_supported=false; (2) GET /api/providers/stripe/capabilities returns supported_environments=['sandbox'], live_supported=false, payment_methods includes 'card', supported_countries include US/GB/IN; (3) GET /api/providers/razorpay/capabilities returns 404; (4) /api/providers/mock/capabilities and /api/providers/examplepsp/capabilities still return 200 (no regression); (5) POST /api/payments on 'acme' tenant with provider_key='mock' (USD, 1500 minor) succeeds and appears in /api/payments list; (6) No 'sk_test_', 'sk_live_', 'whsec_' patterns and no populated api_key/webhook_secret string values leak in /available, /stripe/capabilities, /stripe/health responses; (7) Valid super-admin login (admin@cloudpay.io) succeeds, returns httpOnly access_token cookie; invalid password rejected with 401; (8) Unauthenticated GET /api/payments and /api/providers/available return 401/403. Existing 23 unit tests in test_stripe_provider.py still all pass (no regression to unit suite).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/providers/stripe/health", "issue": "Returns status='unconfigured' because STRIPE_API_KEY is not exported to the backend supervisor process env. STRIPE_API_KEY is present in shell env but missing from /app/backend/.env / supervisor program env, so the adapter's `configured` property is False. Endpoint behavior is correct (no leakage, correct schema); this is a config-propagation gap only. Add STRIPE_API_KEY (test key) to /app/backend/.env and restart backend to move health to 'up'."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_stripe_adapter_integration.py",
+    "/app/test_reports/pytest/iter16_stripe_integration.xml",
+    "/app/backend/tests/test_stripe_provider.py"
+  ],
+  "action_items": [
+    "Optional: Add STRIPE_API_KEY=<test key> to /app/backend/.env (and STRIPE_WEBHOOK_SECRET if desired) and restart backend so /api/providers/stripe/health returns status='up'. Non-blocking — adapter is discoverable, sandbox-only, and safe as-is."
+  ],
+  "critical_code_review_comments": [
+    "StripeProvider.verify_callback reads webhook secret only from env (STRIPE_WEBHOOK_SECRET), ignoring the config.options.credentials.webhook_secret that _webhook_secret() would resolve — inconsistent with per-tenant credential resolution used elsewhere in the adapter. Consider using self._webhook_secret(config) for parity.",
+    "StripeProvider.create_payment catches CardError inside a generic `except Exception` and returns success=False without re-raising; other Stripe exceptions are re-raised as ProviderError. That's correct — just note that `isinstance(exc, stripe.error.CardError)` requires the lazy-imported `stripe` module reference in scope (it is, via the local `stripe` var from _client). OK.",
+    "registry.get_provider() silently falls back to MockProvider on unknown key. This is safe for internal routing but means only the router layer distinguishes 404 for unknown providers — verified working (razorpay -> 404)."
+  ],
+  "updated_files": ["/app/backend/tests/test_stripe_adapter_integration.py"],
+  "success_rate": {"backend": "100% (10/10 executed, 1 skipped on env gap)", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "admin@cloudpay.io / CloudPay-DutqTuzcS1jL64hHJrCy (super admin); tenant slug 'acme'",
+  "seed_data_creation": "One mock payment on 'acme' tenant per run: reference TEST-STRIPE-REG-<epoch>, USD 15.00, provider_key='mock', succeeded.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Stripe adapter is registered and behaves per spec (sandbox-only, live disabled). Only outstanding item is env propagation of STRIPE_API_KEY into the backend supervisor process for health='up'. Integration test file: /app/backend/tests/test_stripe_adapter_integration.py. Unit tests file: /app/backend/tests/test_stripe_provider.py (23 tests). Login returns access_token via httpOnly cookie only (not in JSON body) — grab it from response.cookies['access_token'] and pass as Authorization: Bearer for API tests. Tenant scoping via header 'X-Tenant-Slug: acme' worked for POST /api/payments."
+}

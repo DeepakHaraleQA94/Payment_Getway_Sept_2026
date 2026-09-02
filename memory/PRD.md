@@ -422,6 +422,28 @@ success (sandbox/mock providers). Provider/plugin interfaces (no single hard-cod
   Vault, reversals, UTR handling, full reconciliation double-credit guards, settlement idempotency
   hardening — all require external creds / regulatory approval.
 
+## Real PSP Foundation — Stripe Sandbox Adapter (2026-06, additive)
+- Added ISOLATED Stripe adapter `app/providers/stripe_provider.py` behind the existing generic
+  PaymentProviderAdapter contract; registered in registry. Core payment engine UNCHANGED
+  (test_core_has_no_provider_specific_imports still green — zero Stripe refs in core).
+- Capabilities: key 'stripe', sandbox-only (supported_environments=['sandbox']), LIVE DISABLED
+  (live_supported False; live sk_ keys hard-rejected). Currencies USD/GBP/EUR/INR/AUD/CAD/SGD,
+  countries US/GB/IN/AU/CA/SG/IE/FR/DE/NL, card, DIRECT (PaymentIntent).
+- Real Stripe SDK: PaymentIntent create/retrieve with idempotency_key + max_network_retries=0
+  (no duplicate charge), 20s timeouts, normalized errors (invalid_credentials/network_error/
+  invalid_request/provider_error/malformed_response/card_declined). Status map -> generic model.
+- Inbound webhook verify_callback uses stripe.Webhook.construct_event (real HMAC + timestamp
+  tolerance = replay protection); event_id in raw for platform dedupe; unknown events pass through
+  with normalized_status None. Signature verified BEFORE trust.
+- Secrets: api_key/webhook_secret from secret store (config.options.credentials) or STRIPE_API_KEY/
+  STRIPE_WEBHOOK_SECRET env; never logged/returned/leaked (verified). STRIPE_API_KEY (test) added to
+  backend/.env so health='up'.
+- Tests: test_stripe_provider.py (23) + agent's test_stripe_adapter_integration.py (11).
+  Full suite 217 passed serially. No DB migration. Testing agent: backend verified, no regressions.
+- LIVE/real-money remains DISABLED. Remaining before live: authorized Stripe account + live keys,
+  external KMS/Vault, live webhook endpoint registration, wiring a routable stripe provider_account
+  per tenant, and end-to-end sandbox network test through the payment API.
+
 ## Backlog / Remaining
 - P1: Real provider adapters (Stripe/Adyen/etc.) behind config; provider routing/failover.
 - P1: KYC/AML + VDA provider integrations (currently disabled boundaries).

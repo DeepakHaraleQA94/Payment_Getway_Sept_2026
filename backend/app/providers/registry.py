@@ -7,6 +7,7 @@ changes required. Only the Mock dev/test provider is built in.
 from app.providers.base import PaymentProviderAdapter
 from app.providers.example_provider import ExampleExternalProvider
 from app.providers.mock import MockProvider
+from app.providers.stripe_provider import StripeProvider
 
 _REGISTRY: dict[str, PaymentProviderAdapter] = {}
 
@@ -36,3 +37,6 @@ register(MockProvider())
 # Example external PSP: an ISOLATED reference plugin proving a real provider (with sandbox+live
 # and credential resolution) plugs in without any core change. No real PSP SDK is in the core.
 register(ExampleExternalProvider())
+# Stripe: an ISOLATED real-PSP adapter (SANDBOX/TEST only; live disabled). Talks to Stripe's real
+# test API via the SDK, entirely behind the generic contract — the core payment engine is untouched.
+register(StripeProvider())

@@ -93,10 +93,13 @@ def test_registry_isolation_and_discovery():
     # Built-in mock + the isolated example external PSP reference plugin. No real PSP SDK in core.
     assert registry.has_provider("mock")
     assert registry.has_provider("examplepsp")
-    assert not registry.has_provider("stripe")
+    assert registry.has_provider("stripe")  # isolated real-PSP adapter (sandbox-only)
     assert not registry.has_provider("razorpay")
     keys = {c["key"] for c in registry.list_providers()}
-    assert keys == {"mock", "examplepsp"}, f"unexpected registered providers: {keys}"
+    assert keys == {"mock", "examplepsp", "stripe"}, f"unexpected registered providers: {keys}"
+    # Stripe adapter is sandbox-only with LIVE disabled in this phase.
+    scap = registry.get_provider("stripe").capabilities()
+    assert scap["live_supported"] is False and scap["supported_environments"] == ["sandbox"]
     # Unknown provider safely falls back to mock (never a live/unknown provider).
     assert registry.get_provider("nonexistent").key == "mock"
 
@@ -134,12 +137,14 @@ def acme(admin):
     return next(t["id"] for t in admin.get("/api/tenants").json() if t["slug"] == "acme")
 
 
-def test_discovery_endpoint_lists_only_mock(admin):
+def test_discovery_endpoint_lists_registered_providers(admin):
     r = admin.get("/api/providers/available")
     assert r.status_code == 200, r.text
     keys = {p["key"] for p in r.json()}
-    assert keys == {"mock", "examplepsp"}, f"unexpected discovery keys: {keys}"
-    assert "stripe" not in keys and "razorpay" not in keys
+    assert {"mock", "examplepsp", "stripe"} <= keys, f"unexpected discovery keys: {keys}"
+    assert "razorpay" not in keys
+    stripe = next(p for p in r.json() if p["key"] == "stripe")
+    assert stripe["live_supported"] is False
 
 
 def test_capabilities_and_health_endpoints(admin):
@@ -147,8 +152,11 @@ def test_capabilities_and_health_endpoints(admin):
     assert c.status_code == 200 and c.json()["key"] == "mock"
     h = admin.get("/api/providers/mock/health")
     assert h.status_code == 200 and h.json()["status"] == "up"
-    # Unknown provider -> 404 (isolation).
-    assert admin.get("/api/providers/stripe/capabilities").status_code == 404
+    # Stripe adapter is registered (sandbox-only, live disabled).
+    sc = admin.get("/api/providers/stripe/capabilities")
+    assert sc.status_code == 200 and sc.json()["live_supported"] is False
+    # A truly unknown provider -> 404 (isolation).
+    assert admin.get("/api/providers/nonexistent_x/capabilities").status_code == 404
 
 
 def test_live_is_gated_by_capability_not_permanently_blocked(admin, acme):
@@ -200,7 +208,7 @@ def test_generic_inbound_webhook_unmatched_and_ignored():
     r2 = httpx.post(f"{BASE}/api/providers/mock/webhook", json={"event_type": "noop"}, timeout=15)
     assert r2.status_code == 200 and r2.json().get("ignored") is True
     # Unknown provider -> 404.
-    r3 = httpx.post(f"{BASE}/api/providers/stripe/webhook", json={}, timeout=15)
+    r3 = httpx.post(f"{BASE}/api/providers/razorpay/webhook", json={}, timeout=15)
     assert r3.status_code == 404
 
 
@@ -292,8 +300,8 @@ def test_status_and_reconcile_endpoints(admin, acme):
 
 
 def test_flow_endpoints_reject_unknown_provider(admin):
-    assert admin.post("/api/providers/stripe/intent", json={"amount_minor": 100}).status_code == 404
-    assert admin.post("/api/providers/stripe/qr", json={"amount_minor": 100}).status_code == 404
+    assert admin.post("/api/providers/razorpay/intent", json={"amount_minor": 100}).status_code == 404
+    assert admin.post("/api/providers/razorpay/qr", json={"amount_minor": 100}).status_code == 404
 
 
 
