@@ -310,6 +310,61 @@ class TestReconciliationIdempotency:
         assert len(le_after) == n_before  # reconciliation never double-credits
 
 
+# ============================ SETTLEMENT IMPORT ============================
+class TestSettlementImport:
+    def _csv(self, rows):
+        header = "provider_settlement_ref,currency,gross_minor,fees_minor,net_minor,txn_count\n"
+        return header + "".join(rows)
+
+    def test_import_then_reimport_idempotent(self, admin_client, acme_id):
+        r = uuid.uuid4().hex[:8].upper()
+        csv = self._csv([f"IMP-A-{r},USD,1000000,29000,971000,120\n",
+                         f"IMP-B-{r},USD,500000,15000,485000,60\n"])
+        files = {"file": ("s.csv", csv, "text/csv")}
+        r1 = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}", files=files)
+        assert r1.status_code == 200, r1.text
+        assert r1.json()["created_count"] == 2 and r1.json()["duplicate_count"] == 0
+        # Re-upload the exact same file -> all duplicates, nothing new (idempotent, no double record)
+        r2 = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                               files={"file": ("s.csv", csv, "text/csv")})
+        assert r2.status_code == 200
+        assert r2.json()["created_count"] == 0 and r2.json()["duplicate_count"] == 2
+
+    def test_partial_new_and_existing(self, admin_client, acme_id):
+        r = uuid.uuid4().hex[:8].upper()
+        first = self._csv([f"IMP-C-{r},USD,100,0,100,1\n"])
+        admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                          files={"file": ("s.csv", first, "text/csv")})
+        mixed = self._csv([f"IMP-C-{r},USD,100,0,100,1\n", f"IMP-D-{r},USD,200,0,200,2\n"])
+        r2 = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                               files={"file": ("s.csv", mixed, "text/csv")})
+        body = r2.json()
+        assert body["created_count"] == 1 and body["duplicate_count"] == 1
+
+    def test_invalid_row_reported_others_created(self, admin_client, acme_id):
+        r = uuid.uuid4().hex[:8].upper()
+        csv = self._csv([f"IMP-E-{r},USD,notanumber,0,0,1\n", f"IMP-F-{r},USD,300,0,300,3\n"])
+        resp = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                                 files={"file": ("s.csv", csv, "text/csv")})
+        body = resp.json()
+        assert body["created_count"] == 1 and body["error_count"] == 1
+
+    def test_missing_column_rejected(self, admin_client, acme_id):
+        resp = admin_client.post(f"/api/settlements/import?tenant_id={acme_id}",
+                                 files={"file": ("bad.csv", "foo,bar\n1,2\n", "text/csv")})
+        assert resp.status_code == 400
+
+    def test_import_requires_permission(self, admin_client, acme_id):
+        csv = self._csv([f"IMP-G-{uuid.uuid4().hex[:6]},USD,100,0,100,1\n"])
+        ops = _client(_login("ops-admin@cloudpay.io", ADMIN_PASSWORD))
+        try:
+            resp = ops.post(f"/api/settlements/import?tenant_id={acme_id}",
+                            files={"file": ("s.csv", csv, "text/csv")})
+            assert resp.status_code == 403
+        finally:
+            ops.close()
+
+
 # ============================ SECURITY: NO SECRET LEAK ============================
 class TestNoSecretLeak:
     def test_financial_endpoints_never_leak_secrets(self, admin_client, acme_id):

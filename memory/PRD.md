@@ -518,3 +518,23 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 ### Infra note
 - Pod reset again on entry: PostgreSQL cluster down + cloudpay db/role wiped. Recreated role+db,
   ran all migrations to head (b8f1c2a3d4e5), restarted supervisor; backend reseeded. Code unchanged.
+
+## Settlement Import (2026-06, batch-only — NO ledger credit)
+- Operators can upload a provider settlement CSV and reconcile it idempotently in one click.
+  CSV shape (one row = one settlement batch): provider_settlement_ref, currency, gross_minor,
+  fees_minor, net_minor, txn_count. Amounts taken verbatim from the file (provider = source of truth).
+- Idempotent: rows whose (tenant_id, provider_settlement_ref) already exist are SKIPPED as
+  duplicates — re-uploading the same file never creates a second settlement (reuses the unique
+  constraint added in b8f1c2a3d4e5). Per-row SAVEPOINTs so a duplicate/bad row never discards
+  successfully-created rows. Returns {created, duplicates, errors} counts.
+- Backend: settlement_service.import_settlements + POST /api/settlements/import (multipart,
+  settlement.manage, tenant-isolated, max 5000 rows, UTF-8 CSV, requires provider_settlement_ref
+  column) + GET /api/settlements/import-template. Audited (settlement.import). EXISTING settlement
+  behavior (generate) and the no-ledger-credit policy are UNCHANGED per user instruction.
+- Frontend: Settlements screen adds "CSV Template" (client-side download) + "Import File" (upload
+  with created/duplicate/error toast summary). data-testids: settlement-import-button,
+  settlement-import-input, settlement-template-button.
+- Tests: test_financial_integrity.py extended to 24 (import+reimport idempotent, partial new/existing,
+  invalid-row reported/others created, missing-column 400, RBAC 403). All pass. Verified via UI + curl.
+- DEFERRED (user will provide creds separately): Real Email Delivery via Resend (API key + verified
+  sender domain e.g. no-reply@vortexglobal.info). Currently email is log-only MOCKED.

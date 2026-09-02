@@ -1,8 +1,12 @@
 """Balance/ledger, turnover, settlements, reports, FX endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+import csv
+import io
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import record_audit
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_permission, resolve_tenant_id
 from app.models.finance import LedgerAccount, LedgerEntry, Settlement
@@ -69,6 +73,57 @@ async def generate_settlement(currency: str = "USD", tenant_id: str | None = Non
     await db.refresh(s)
     return {"id": str(s.id), "reference": s.reference, "net_minor": s.net_minor, "status": s.status,
             "provider_settlement_ref": s.provider_settlement_ref}
+
+
+SETTLEMENT_IMPORT_COLUMNS = ["provider_settlement_ref", "currency", "gross_minor",
+                             "fees_minor", "net_minor", "txn_count"]
+MAX_IMPORT_ROWS = 5000
+
+
+@router.get("/settlements/import-template")
+async def settlement_import_template(user=Depends(require_permission("settlement.manage"))):
+    """The expected CSV shape for provider settlement imports (one row = one settlement batch)."""
+    return {"columns": SETTLEMENT_IMPORT_COLUMNS,
+            "example": "provider_settlement_ref,currency,gross_minor,fees_minor,net_minor,txn_count\n"
+                       "PSP-2026-06-01,USD,1000000,29000,971000,120\n"}
+
+
+@router.post("/settlements/import")
+async def import_settlements(file: UploadFile = File(...), tenant_id: str | None = None,
+                             db: AsyncSession = Depends(get_db),
+                             user=Depends(require_permission("settlement.manage"))):
+    """Upload a provider settlement CSV and reconcile it idempotently (batch-only, no ledger credit).
+
+    Re-uploading the same file is safe: rows whose provider_settlement_ref already exists are
+    skipped as duplicates. Tenant-isolated; requires settlement.manage.
+    """
+    tid = resolve_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames or "provider_settlement_ref" not in reader.fieldnames:
+        raise HTTPException(status_code=400,
+                            detail="CSV must include a 'provider_settlement_ref' column")
+    rows = list(reader)
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV has no data rows")
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(status_code=400, detail=f"Too many rows (max {MAX_IMPORT_ROWS})")
+
+    summary = await settlement_service.import_settlements(db, tenant_id=tid, actor=user, rows=rows)
+    await record_audit(db, action="settlement.import", resource_type="settlement", resource_id=None,
+                       tenant_id=tid, actor_id=str(user.id), actor_email=user.email,
+                       changes={"filename": file.filename, "created": summary["created_count"],
+                                "duplicates": summary["duplicate_count"],
+                                "errors": summary["error_count"]})
+    await db.commit()
+    return summary
 
 
 @router.get("/reports/payments-by-status")
