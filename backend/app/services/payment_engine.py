@@ -307,3 +307,126 @@ async def create_refund(
     await db.commit()
     await db.refresh(refund)
     return refund
+
+
+async def _existing_payment_credit(db, tenant_id, payment_id) -> int:
+    from app.models.finance import LedgerEntry
+    return (await db.execute(
+        select(func.coalesce(func.sum(LedgerEntry.amount_minor), 0)).where(
+            LedgerEntry.tenant_id == tenant_id, LedgerEntry.ref_type == "payment",
+            LedgerEntry.ref_id == payment_id, LedgerEntry.direction == "credit"))).scalar_one()
+
+
+async def capture_payment(
+    db: AsyncSession, *, tenant_id, actor, payment: Payment,
+    amount_minor: int | None = None, reason: str | None = None, idempotency_key: str | None = None,
+) -> Payment:
+    """Capture an eligible AUTHORIZED payment. Provider-agnostic, idempotent, no duplicate credit."""
+    locked = await db.execute(select(Payment).where(Payment.id == payment.id).with_for_update())
+    payment = locked.scalar_one()
+    md = dict(payment.metadata_json or {})
+
+    # Idempotency: a repeated capture with the same key is a safe no-op (no second provider call).
+    if idempotency_key and md.get("capture_idempotency_key") == idempotency_key:
+        return payment
+    if payment.status != "authorized":
+        raise ValueError("Only an authorized payment can be captured")
+    cap_amount = payment.amount_minor if amount_minor is None else amount_minor
+    if cap_amount <= 0 or cap_amount > payment.amount_minor:
+        raise ValueError("Capture amount exceeds the authorized amount")
+
+    provider = get_provider(payment.provider_key)
+    if not provider.supports_capture():
+        raise ValueError(f"Provider '{payment.provider_key}' does not support capture")
+    account = await _provider_account(db, tenant_id, payment.provider_key, payment.environment)
+    cfg = await _resolve_config(db, account, payment.provider_key, payment.environment)
+    result = provider.capture(payment.provider_txn_id or "", cap_amount, payment.currency, cfg)
+    if not result.success:
+        raise ValueError(result.error or "Provider capture failed")
+
+    # Never duplicate a ledger credit: post one only if the payment has none yet (an authorized
+    # payment may already carry a credit from creation, depending on the provider).
+    if await _existing_payment_credit(db, tenant_id, payment.id) == 0:
+        fee = await fee_engine.compute_fee(db, tenant_id=tenant_id, amount_minor=cap_amount,
+                                           currency=payment.currency, provider_key=payment.provider_key)
+        payment.fee_minor = fee
+        payment.net_minor = cap_amount - fee
+        await ledger_service.post_entry(
+            db, tenant_id=tenant_id, currency=payment.currency, direction="credit",
+            amount_minor=payment.net_minor, ref_type="payment", ref_id=payment.id,
+            description=f"Capture {payment.reference}")
+
+    prev_status = payment.status
+    payment_state.validate_transition(prev_status, "captured")
+    payment.status = "captured"
+    md["capture_idempotency_key"] = idempotency_key
+    payment.metadata_json = md
+
+    await record_audit(
+        db, action="payment.capture", resource_type="payment", resource_id=payment.id,
+        tenant_id=tenant_id, actor_id=str(getattr(actor, "id", "")) or None,
+        actor_email=getattr(actor, "email", None),
+        changes={"previous_state": prev_status, "new_state": payment.status,
+                 "amount_minor": cap_amount, "currency": payment.currency, "reason": reason,
+                 "provider_txn_id": payment.provider_txn_id, "correlation_id": str(payment.id)})
+    await webhook_service.dispatch(
+        db, tenant_id=tenant_id, event="payment.captured",
+        data={"payment_id": str(payment.id), "reference": payment.reference,
+              "amount_minor": cap_amount, "currency": payment.currency, "status": payment.status,
+              "provider_txn_id": payment.provider_txn_id})
+    await db.commit()
+    await db.refresh(payment)
+    return payment
+
+
+async def void_payment(
+    db: AsyncSession, *, tenant_id, actor, payment: Payment,
+    reason: str | None = None, idempotency_key: str | None = None,
+) -> Payment:
+    """Void/cancel an eligible AUTHORIZED payment before capture. Idempotent; creates no money."""
+    locked = await db.execute(select(Payment).where(Payment.id == payment.id).with_for_update())
+    payment = locked.scalar_one()
+    md = dict(payment.metadata_json or {})
+
+    if idempotency_key and md.get("void_idempotency_key") == idempotency_key:
+        return payment
+    if payment.status != "authorized":
+        raise ValueError("Only an authorized payment can be voided")
+
+    provider = get_provider(payment.provider_key)
+    if not provider.supports_void():
+        raise ValueError(f"Provider '{payment.provider_key}' does not support void")
+    account = await _provider_account(db, tenant_id, payment.provider_key, payment.environment)
+    cfg = await _resolve_config(db, account, payment.provider_key, payment.environment)
+    result = provider.void(payment.provider_txn_id or "", cfg)
+    if not result.success:
+        raise ValueError(result.error or "Provider void failed")
+
+    # Void creates no money: it only unwinds a credit the authorization may already have posted.
+    credited = await _existing_payment_credit(db, tenant_id, payment.id)
+    if credited > 0:
+        await ledger_service.post_entry(
+            db, tenant_id=tenant_id, currency=payment.currency, direction="debit",
+            amount_minor=int(credited), ref_type="void", ref_id=payment.id,
+            description=f"Void of {payment.reference}")
+
+    prev_status = payment.status
+    payment_state.validate_transition(prev_status, "cancelled")
+    payment.status = "cancelled"
+    md["void_idempotency_key"] = idempotency_key
+    payment.metadata_json = md
+
+    await record_audit(
+        db, action="payment.void", resource_type="payment", resource_id=payment.id,
+        tenant_id=tenant_id, actor_id=str(getattr(actor, "id", "")) or None,
+        actor_email=getattr(actor, "email", None),
+        changes={"previous_state": prev_status, "new_state": payment.status, "reason": reason,
+                 "provider_txn_id": payment.provider_txn_id, "correlation_id": str(payment.id)})
+    await webhook_service.dispatch(
+        db, tenant_id=tenant_id, event="payment.voided",
+        data={"payment_id": str(payment.id), "reference": payment.reference,
+              "currency": payment.currency, "status": payment.status,
+              "provider_txn_id": payment.provider_txn_id})
+    await db.commit()
+    await db.refresh(payment)
+    return payment

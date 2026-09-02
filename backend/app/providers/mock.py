@@ -178,6 +178,12 @@ class MockProvider(PaymentProviderAdapter):
     def supports_webhooks(self) -> bool:
         return True
 
+    def supports_capture(self) -> bool:
+        return True
+
+    def supports_void(self) -> bool:
+        return True
+
     def health_check(self, environment: str | None = None) -> dict:
         env = environment or "sandbox"
         if not self.supports_environment(env):
@@ -187,6 +193,16 @@ class MockProvider(PaymentProviderAdapter):
     # ---- standardized contract ----
     def create_payment(self, req: ChargeRequest, config=None) -> ProviderResult:
         try:
+            # Additive opt-in: manual-capture (auth-then-capture) flow. Only activates when the
+            # caller explicitly requests it via metadata.capture_mode == "manual"; all existing
+            # behavior (default/immediate capture) is unchanged.
+            if (req.metadata or {}).get("capture_mode") == "manual":
+                declined = (req.amount_minor % 100) == _DECLINE_UNIT
+                if declined:
+                    return ProviderResult(success=False, provider_txn_id=None, status="failed",
+                                          raw={"sandbox": True}, error="card_declined")
+                return ProviderResult(success=True, provider_txn_id=f"mock_{uuid.uuid4().hex[:20]}",
+                                      status="authorized", raw={"sandbox": True, "capture_mode": "manual"})
             auth = self._auth.prepare(self.configuration())
             raw = self._client.request("POST", "/charges",
                                        payload=self._req.to_create_payment(req), auth=auth)
@@ -195,6 +211,16 @@ class MockProvider(PaymentProviderAdapter):
             err = self._errors.to_provider_error(exc)
             return ProviderResult(success=False, provider_txn_id=None, status="failed",
                                   raw={"sandbox": True}, error=err.code)
+
+    def capture(self, provider_txn_id: str, amount_minor: int, currency: str, config=None) -> ProviderResult:
+        # Deterministic sandbox capture of an authorized mock payment.
+        return ProviderResult(success=True, provider_txn_id=provider_txn_id, status="captured",
+                              raw={"sandbox": True, "captured_amount": amount_minor})
+
+    def void(self, provider_txn_id: str, config=None) -> ProviderResult:
+        # Deterministic sandbox void/cancel of an authorized mock payment.
+        return ProviderResult(success=True, provider_txn_id=provider_txn_id, status="cancelled",
+                              raw={"sandbox": True})
 
     def refund(self, provider_txn_id: str, amount_minor: int, currency: str, config=None) -> ProviderResult:
         auth = self._auth.prepare(self.configuration())

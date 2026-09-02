@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_feature, require_permission, resolve_tenant_id
 from app.models.payment import Payment, Refund, UtrSubmission
 from app.schemas import (
+    CaptureCreate,
     PaymentCreate,
     PaymentOut,
     RefundCreate,
@@ -19,6 +20,7 @@ from app.schemas import (
     UtrOut,
     UtrReview,
     UtrSubmitCreate,
+    VoidCreate,
 )
 from app.services import payment_engine, reversal_service, utr_service
 
@@ -106,6 +108,40 @@ async def reverse_payment(payment_id: uuid.UUID, body: ReverseCreate, db: AsyncS
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return reversal
+
+
+@router.post("/{payment_id}/capture", response_model=PaymentOut)
+async def capture_payment(payment_id: uuid.UUID, body: CaptureCreate, db: AsyncSession = Depends(get_db),
+                          user=Depends(require_permission("payment.capture"))):
+    """Capture an eligible AUTHORIZED payment. Authorized (payment.capture), tenant-isolated,
+    idempotent, provider-agnostic, and never duplicates a ledger credit."""
+    payment = await db.get(Payment, payment_id)
+    if not payment or (not user.is_superadmin and payment.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Payment not found")
+    try:
+        result = await payment_engine.capture_payment(
+            db, tenant_id=payment.tenant_id, actor=user, payment=payment,
+            amount_minor=body.amount_minor, reason=body.reason, idempotency_key=body.idempotency_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.post("/{payment_id}/void", response_model=PaymentOut)
+async def void_payment(payment_id: uuid.UUID, body: VoidCreate, db: AsyncSession = Depends(get_db),
+                       user=Depends(require_permission("payment.void"))):
+    """Void/cancel an eligible AUTHORIZED payment before capture. Authorized (payment.void),
+    tenant-isolated, idempotent, provider-agnostic, and creates no money."""
+    payment = await db.get(Payment, payment_id)
+    if not payment or (not user.is_superadmin and payment.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Payment not found")
+    try:
+        result = await payment_engine.void_payment(
+            db, tenant_id=payment.tenant_id, actor=user, payment=payment,
+            reason=body.reason, idempotency_key=body.idempotency_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
 
 @router.post("/utr", response_model=UtrOut)

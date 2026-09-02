@@ -86,6 +86,14 @@ class PaymentProviderAdapter(ABC):
     def supports_refund(self) -> bool:
         return True
 
+    def supports_capture(self) -> bool:
+        """Whether this plugin can capture a previously authorized payment. Default: no."""
+        return False
+
+    def supports_void(self) -> bool:
+        """Whether this plugin can void/cancel a previously authorized payment. Default: no."""
+        return False
+
     def supports_webhooks(self) -> bool:
         return False
 
@@ -108,6 +116,8 @@ class PaymentProviderAdapter(ABC):
             "supported_environments": list(self.supported_environments),
             "live_supported": ProviderEnvironment.LIVE.value in self.supported_environments,
             "supports_refund": self.supports_refund(),
+            "supports_capture": self.supports_capture(),
+            "supports_void": self.supports_void(),
             "supports_webhooks": self.supports_webhooks(),
             "supports_intent": self.supports_intent(),
             "supports_qr": self.supports_qr(),
@@ -143,6 +153,19 @@ class PaymentProviderAdapter(ABC):
     def get_payment_status(self, provider_txn_id: str,
                            config: "ProviderConfiguration | None" = None) -> ProviderStatusResult:
         return ProviderStatusResult(provider_txn_id=provider_txn_id, normalized_status="unknown")
+
+    def capture(self, provider_txn_id: str, amount_minor: int, currency: str,
+                config: "ProviderConfiguration | None" = None) -> ProviderResult:
+        """Capture a previously AUTHORIZED payment. Plugins that support it override this.
+
+        Providers without the capability MUST surface a normalized unsupported-capability error.
+        """
+        raise ProviderError("unsupported_capability", "capture is not supported by this provider")
+
+    def void(self, provider_txn_id: str,
+             config: "ProviderConfiguration | None" = None) -> ProviderResult:
+        """Void/cancel a previously AUTHORIZED payment before capture. Plugins override this."""
+        raise ProviderError("unsupported_capability", "void is not supported by this provider")
 
     def generate_intent(self, req: ChargeRequest,
                         config: "ProviderConfiguration | None" = None) -> ProviderIntent:

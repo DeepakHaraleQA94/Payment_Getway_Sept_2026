@@ -597,3 +597,30 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   mirroring backend RBAC. Permissions reused (no new grants): payment.reverse, utr.verify, utr.submit.
 - Testing: testing_agent (iteration_19.json) — all 6 scenarios PASS 100%. Backend regression
   test_financial_integrity = 27/27 still pass. No migration; no existing functionality modified.
+
+## Payment Capture & Void (2026-06, provider-agnostic, ADDITIVE)
+- New auth-then-capture capability. No DB migration (reuses Payment + metadata_json for op-level
+  idempotency keys). No existing payment/refund/reversal/UTR/settlement behavior changed.
+- Contract (base.py): added optional supports_capture()/supports_void() (default False) + generic
+  capture()/void() that raise a normalized ProviderError('unsupported_capability'). Capabilities dict
+  advertises the flags. Core stays provider-agnostic (test_provider_architecture still passes).
+- Mock provider: supports capture/void; additive opt-in manual-capture create branch
+  (metadata.capture_mode=='manual' -> 'authorized'); default create behavior unchanged.
+- Stripe provider: capture -> PaymentIntent.capture, void -> PaymentIntent.cancel (official SDK,
+  existing credential resolution, sandbox-only/live-disabled guard preserved). NOTE: env holds a
+  placeholder STRIPE_API_KEY (sk_test_emergent) so live end-to-end Stripe capture/void couldn't be
+  exercised here; adapter verified structurally + credential/error path confirmed.
+- Engine: capture_payment/void_payment — row-locked, tenant-isolated, state-validated
+  (authorized->captured / authorized->cancelled only), idempotent (op key stored in metadata_json).
+  Capture posts a ledger credit ONLY if none exists (no duplicate credit). Void posts a compensating
+  DEBIT unwinding any existing credit (creates no money). Both audited + webhook (payment.captured /
+  payment.voided).
+- API: POST /api/payments/{id}/capture (payment.capture), POST /api/payments/{id}/void (payment.void).
+- Permissions added (least-privilege, not auto-granted to Admin/Client): payment.capture, payment.void.
+- Tests: tests/test_capture_void.py (17) all pass — capture/void authorized, duplicate rejected,
+  idempotent-by-key, over-authorized rejected, non-authorized rejected, capture-after-void &
+  void-after-capture rejected, no-duplicate-ledger-credit, void-unwinds-credit, concurrent safety,
+  RBAC 403, cross-tenant 404, unsupported-capability normalized error. Regression: financial_integrity
+  + payment_state + provider_architecture + capability_routing + stripe_provider = 112 pass.
+- UI: not added (reported as gap) — backend/API capability delivered; existing Payments screen left
+  unchanged per the no-redesign rule.

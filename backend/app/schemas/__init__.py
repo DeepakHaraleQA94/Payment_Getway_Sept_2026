@@ -269,6 +269,18 @@ class ReverseCreate(BaseModel):
     idempotency_key: str | None = None
 
 
+# ---- Capture / Void ----
+class CaptureCreate(BaseModel):
+    amount_minor: int | None = None  # optional partial capture; defaults to full authorized amount
+    reason: str | None = None
+    idempotency_key: str | None = None
+
+
+class VoidCreate(BaseModel):
+    reason: str | None = None
+    idempotency_key: str | None = None
+
+
 class ReversalOut(ORMBase):
     id: uuid.UUID
     payment_id: uuid.UUID

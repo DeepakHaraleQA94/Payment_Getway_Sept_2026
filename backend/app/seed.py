@@ -22,6 +22,8 @@ PERMISSIONS = [
     ("fee.manage", "Manage fee rules", "fees"),
     ("payment.create", "Create payments", "payments"),
     ("payment.reverse", "Reverse payments", "payments"),
+    ("payment.capture", "Capture authorized payments", "payments"),
+    ("payment.void", "Void authorized payments", "payments"),
     ("refund.create", "Create refunds", "refunds"),
     ("utr.submit", "Submit bank UTR references", "payments"),
     ("utr.verify", "Confirm/reject bank UTR references", "payments"),

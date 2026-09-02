@@ -137,6 +137,34 @@ class StripeProvider(PaymentProviderAdapter):
         rid = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
         return ProviderResult(success=True, provider_txn_id=rid, status="refunded", raw={"refund_id": rid})
 
+    def supports_capture(self) -> bool:
+        return True
+
+    def supports_void(self) -> bool:
+        return True
+
+    def capture(self, provider_txn_id: str, amount_minor: int, currency: str,
+                config: ProviderConfiguration | None = None) -> ProviderResult:
+        # Capture a Stripe PaymentIntent that is in requires_capture (authorized) state.
+        stripe = self._client(config)
+        try:
+            intent = stripe.PaymentIntent.capture(
+                provider_txn_id, amount_to_capture=amount_minor, timeout=_REQUEST_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001
+            raise self._map_error(stripe, exc)
+        return self._result_from_intent(intent)
+
+    def void(self, provider_txn_id: str, config: ProviderConfiguration | None = None) -> ProviderResult:
+        # Void = cancel a Stripe PaymentIntent before capture.
+        stripe = self._client(config)
+        try:
+            intent = stripe.PaymentIntent.cancel(provider_txn_id, timeout=_REQUEST_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001
+            raise self._map_error(stripe, exc)
+        pid = intent.get("id") if isinstance(intent, dict) else getattr(intent, "id", provider_txn_id)
+        return ProviderResult(success=True, provider_txn_id=pid, status="cancelled",
+                              raw={"provider_status": "canceled"})
+
     def _result_from_intent(self, intent) -> ProviderResult:
         d = intent if isinstance(intent, dict) else intent
         pid = d.get("id") if isinstance(d, dict) else getattr(d, "id", None)
