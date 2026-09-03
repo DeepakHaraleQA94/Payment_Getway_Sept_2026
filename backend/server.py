@@ -14,6 +14,7 @@ from app.models.tenant import Tenant
 from app.routers import auth, config as config_router, finance, iam, payments, system, tenants
 from app.routers import api_keys, webhooks, checkout, reports_export
 from app.routers import files, reports_scheduled, superadmin
+from app.routers import reconciliation
 from app.seed import seed
 from app.services import turnover_engine
 
@@ -51,7 +52,7 @@ async def security_headers(request, call_next):
 for r in (auth.router, tenants.router, iam.router, config_router.router,
           payments.router, finance.router, system.router,
           api_keys.router, webhooks.router, checkout.router, reports_export.router,
-          files.router, reports_scheduled.router, superadmin.router):
+          files.router, reports_scheduled.router, superadmin.router, reconciliation.router):
     app.include_router(r)
 
 

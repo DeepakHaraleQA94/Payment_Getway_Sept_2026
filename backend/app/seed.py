@@ -28,6 +28,8 @@ PERMISSIONS = [
     ("utr.submit", "Submit bank UTR references", "payments"),
     ("utr.verify", "Confirm/reject bank UTR references", "payments"),
     ("settlement.manage", "Generate settlements", "settlements"),
+    ("reconciliation.run", "Run reconciliation", "reconciliation"),
+    ("reconciliation.view", "View reconciliation runs", "reconciliation"),
     ("audit.view", "View audit logs", "audit"),
     ("config.manage", "Manage system configuration", "config"),
     ("apikey.manage", "Manage API keys", "api_keys"),

@@ -322,7 +322,9 @@ async def capture_payment(
     amount_minor: int | None = None, reason: str | None = None, idempotency_key: str | None = None,
 ) -> Payment:
     """Capture an eligible AUTHORIZED payment. Provider-agnostic, idempotent, no duplicate credit."""
-    locked = await db.execute(select(Payment).where(Payment.id == payment.id).with_for_update())
+    locked = await db.execute(
+        select(Payment).where(Payment.id == payment.id).with_for_update()
+        .execution_options(populate_existing=True))
     payment = locked.scalar_one()
     md = dict(payment.metadata_json or {})
 
@@ -384,7 +386,9 @@ async def void_payment(
     reason: str | None = None, idempotency_key: str | None = None,
 ) -> Payment:
     """Void/cancel an eligible AUTHORIZED payment before capture. Idempotent; creates no money."""
-    locked = await db.execute(select(Payment).where(Payment.id == payment.id).with_for_update())
+    locked = await db.execute(
+        select(Payment).where(Payment.id == payment.id).with_for_update()
+        .execution_options(populate_existing=True))
     payment = locked.scalar_one()
     md = dict(payment.metadata_json or {})
 

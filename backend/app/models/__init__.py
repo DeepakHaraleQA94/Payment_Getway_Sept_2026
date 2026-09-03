@@ -17,6 +17,8 @@ from app.models.finance import (  # noqa: F401
     FeeRule,
     LedgerAccount,
     LedgerEntry,
+    ReconciliationItem,
+    ReconciliationRun,
     Settlement,
     TurnoverSnapshot,
 )

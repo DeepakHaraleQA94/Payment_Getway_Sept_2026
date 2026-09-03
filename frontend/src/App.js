@@ -10,6 +10,7 @@ import Payments from "@/pages/Payments";
 import Refunds from "@/pages/Refunds";
 import Reversals from "@/pages/Reversals";
 import UtrConsole from "@/pages/UtrConsole";
+import Reconciliation from "@/pages/Reconciliation";
 import Ledger from "@/pages/Ledger";
 import Settlements from "@/pages/Settlements";
 import Providers from "@/pages/Providers";
@@ -66,6 +67,7 @@ function AppRouter() {
       <Route path="/dashboard/refunds" element={<Protected><Refunds /></Protected>} />
       <Route path="/dashboard/reversals" element={<Protected><Reversals /></Protected>} />
       <Route path="/dashboard/utr" element={<Protected><UtrConsole /></Protected>} />
+      <Route path="/dashboard/reconciliation" element={<Protected><Reconciliation /></Protected>} />
       <Route path="/dashboard/ledger" element={<Protected><Ledger /></Protected>} />
       <Route path="/dashboard/settlements" element={<Protected><Settlements /></Protected>} />
       <Route path="/dashboard/checkout" element={<Protected><Checkout /></Protected>} />

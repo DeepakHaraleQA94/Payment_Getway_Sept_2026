@@ -624,3 +624,29 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   + payment_state + provider_architecture + capability_routing + stripe_provider = 112 pass.
 - UI: not added (reported as gap) — backend/API capability delivered; existing Payments screen left
   unchanged per the no-redesign rule.
+
+## Line-Level Reconciliation & Matching Engine (2026-06, REPORT-ONLY, additive)
+- New provider-agnostic engine that matches internal payments against provider records (uploaded
+  transaction-lines CSV AND/OR provider-status pull) and reports discrepancies. READ-ONLY: never
+  posts ledger, never changes balances, never mutates payments/settlements.
+- Fixed outcome categories: matched, amount_mismatch, currency_mismatch, status_mismatch,
+  missing_in_cloudpay, missing_at_provider, duplicate. Deterministic status bucketing keeps it
+  provider-agnostic (no provider-specific logic in core).
+- DB: additive migration c9d2e3f4a5b6 -> new tables reconciliation_runs, reconciliation_items
+  (server_default now() on timestamps). No existing tables changed.
+- Service services/reconciliation_engine.py: tenant-isolated, idempotent per (tenant, run_ref),
+  per-line matching + duplicate detection + provider-pull fallback (best-effort, read-only).
+- API (new router mounted in server.py): POST /api/reconciliation/run (multipart optional CSV,
+  source upload|provider_pull|both, currency, run_ref), GET /api/reconciliation/runs,
+  GET /api/reconciliation/runs/{id} (outcome filter), GET /api/reconciliation/template. Audited.
+- Permissions added (not auto-granted to Admin/Client): reconciliation.run, reconciliation.view.
+- UI: new page frontend/src/pages/Reconciliation.jsx (runs list, Run dialog with source/CSV/currency/
+  run_ref, discrepancy-summary filter chips for all 7 categories, line-level detail), route
+  /dashboard/reconciliation + perm-gated nav item (reconciliation.view). Additive; no existing pages
+  changed.
+- Tests: tests/test_reconciliation.py (8) all pass. Regression across reconciliation + capture_void +
+  financial_integrity + payment_state + provider_architecture + capability_routing + reports +
+  stripe_provider = 143 pass.
+- Concurrency fix (this task's own code): capture_payment/void_payment FOR UPDATE selects now use
+  execution_options(populate_existing=True) so the locked read refreshes in-memory status (previously
+  a stale identity-map read let two concurrent ops both succeed). Verified deterministic.

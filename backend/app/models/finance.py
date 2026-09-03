@@ -126,3 +126,50 @@ class Settlement(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
         Index("ix_settlements_tenant_status", "tenant_id", "status"),
         UniqueConstraint("tenant_id", "provider_settlement_ref", name="uq_settlement_tenant_provider_ref"),
     )
+
+
+class ReconciliationRun(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
+    """A single line-level reconciliation run (report-only). Idempotent per (tenant, run_ref)."""
+    __tablename__ = "reconciliation_runs"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # upload | provider_pull | both
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    total_lines: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    discrepancy_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # per-category counts
+    run_ref: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "run_ref", name="uq_recon_run_tenant_ref"),
+    )
+
+
+class ReconciliationItem(UUIDPkMixin, TimestampMixin, Base):
+    """One reconciled line and its outcome. Report-only: never posts to the ledger."""
+    __tablename__ = "reconciliation_items"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("reconciliation_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # matched | amount_mismatch | currency_mismatch | status_mismatch |
+    # missing_in_cloudpay | missing_at_provider | duplicate
+    outcome: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    provider_txn_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"), nullable=True
+    )
+    provider_amount_minor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    internal_amount_minor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    internal_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(300), nullable=True)
