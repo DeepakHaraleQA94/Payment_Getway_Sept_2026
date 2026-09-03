@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 26 — Verified 4 additive enhancements to Payment Acceptance: (1) Primary badge, (2) Checkout UPI block, (3) Verification states UI, (4) CSV export. Backend regression: all 27 tests pass (10 test_payment_acceptance.py incl. manual_verification + csv_export; 17 test_capture_void.py). Frontend: created two enabled INR accounts (priority 1 & 2) on active tenant — only priority-1 shows 'Primary' badge (data-testid=acceptance-primary-{id}); after disabling priority-1, Primary moves to priority-2. Verification workflow: unverified→click 'Verify'→pending→Mark Verified/Reject buttons appear→click Mark Verified→'verified' badge shown, buttons disappear; Reject path sets 'rejected'. Export CSV button downloads text/csv with header including upi_vpa and verification_status. Hosted checkout: session for tenant with enabled INR account shows checkout-upi-block with checkout-upi-vpa (prim6644070@yesbank) and checkout-upi-copy Copy button, plus checkout-pay-button remains functional; session for a tenant without an eligible acceptance account (bharat-pay USD) correctly omits the UPI block while checkout-pay-button still renders.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_payment_acceptance.py",
+    "/app/backend/tests/test_capture_void.py",
+    "/app/test_reports/pytest/iter26_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CheckoutPage copy button uses navigator.clipboard.writeText without try/catch — in restricted contexts (iframes/headless without permission) an uncaught runtime error surfaces (observed 'Failed to execute writeText on Clipboard: Write permission denied') even though the success toast still fires. Wrap in try/catch or check permission before writing (non-blocking, cosmetic).",
+    "PaymentAcceptance.jsx primaryIds is recomputed inline on every render — fine for current row counts but could be memoised via useMemo if lists grow (non-blocking)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (27/27)", "frontend": "100% (Primary badge move, verify/approve, verify/reject, CSV, checkout positive + negative)" },
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (Super Admin)",
+  "seed_data_creation": "Two INR sandbox acceptance accounts created on the currently-selected tenant (CapTest 0396da29) named 'TEST Primary P1' (rejected after test) and 'TEST Primary P2' (verified). Two checkout sessions (INR on CapTest, USD on bharat-pay) created for hosted checkout verification. No production data mutated.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Note: test_capture_void.py requires ADMIN_PASSWORD env var (uses os.environ['ADMIN_PASSWORD']); when running via pytest, export ADMIN_PASSWORD='CloudPay-DutqTuzcS1jL64hHJrCy'. test_payment_acceptance.py hits POST /api/auth/login for each test — running with pytest-xdist can trigger the 30/min login rate limit; use -o addopts='' to disable xdist. All 4 additive enhancements are stable; testids used: acceptance-primary-{id}, acceptance-verify-{id}, acceptance-approve-{id}, acceptance-reject-{id}, acceptance-toggle-{id}, export-acceptance-button, checkout-upi-block, checkout-upi-vpa, checkout-upi-copy, checkout-pay-button.",
+  "rca of the issue": "N/A — no defects observed."
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Landmark, Pencil, Trash2, ShieldCheck, History } from "lucide-react";
+import { Plus, Landmark, Pencil, Trash2, ShieldCheck, History, Download, Star, Check, X } from "lucide-react";
 import { toast } from "sonner";
-import { api, formatApiError } from "@/lib/api";
+import { api, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -102,17 +102,42 @@ export default function PaymentAcceptance() {
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); setAuditRows([]); }
   };
 
+  const decide = async (a, status) => {
+    try {
+      await api.post(`/payment-acceptance/accounts/${a.id}/verification`, { status });
+      toast.success(`Account ${status}`);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  // Primary = highest-priority ENABLED account per currency (where collections would route).
+  const primaryIds = (() => {
+    const best = {};
+    accounts.forEach((a) => {
+      if (!a.enabled) return;
+      const cur = best[a.currency];
+      if (!cur || a.priority < cur.priority) best[a.currency] = a;
+    });
+    return new Set(Object.values(best).map((a) => a.id));
+  })();
+
   return (
     <div data-testid="payment-acceptance-page">
       <PageHeader
         title="Payment Acceptance"
         subtitle="Merchant-owned UPI accounts that receive customer payments. Separate from external provider adapters."
-        action={canManage && (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="add-acceptance-button" onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Add UPI Account</Button>
-            </DialogTrigger>
-            <DialogContent data-testid="acceptance-dialog">
+        action={(
+          <div className="flex items-center gap-2">
+            <Button variant="outline" data-testid="export-acceptance-button"
+              onClick={() => downloadCsv("/payment-acceptance/accounts/export.csv", { tenant_id: selectedTenantId }, "payment_acceptance_accounts.csv")}>
+              <Download className="h-4 w-4 mr-2" /> Export CSV
+            </Button>
+            {canManage && (
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <Button data-testid="add-acceptance-button" onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Add UPI Account</Button>
+                </DialogTrigger>
+                <DialogContent data-testid="acceptance-dialog">
               <DialogHeader>
                 <DialogTitle>{editing ? "Edit" : "Add"} UPI Acceptance Account</DialogTitle>
                 <DialogDescription>A destination that collects customer payments. Verification stays "unverified" until a real provider verifies it.</DialogDescription>
@@ -166,8 +191,10 @@ export default function PaymentAcceptance() {
               <DialogFooter>
                 <Button data-testid="submit-acceptance-button" onClick={save} disabled={busy || !form.display_name || !form.upi_vpa}>{editing ? "Save" : "Add"}</Button>
               </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+            )}
+          </div>
         )}
       />
 
@@ -193,7 +220,14 @@ export default function PaymentAcceptance() {
               {accounts.map((a) => (
                 <tr key={a.id} className="border-b border-border/60" data-testid={`acceptance-row-${a.id}`}>
                   <td className="py-3 pr-4 font-medium">
-                    <div className="flex items-center gap-2"><Landmark className="h-4 w-4 text-primary" /> {a.display_name}</div>
+                    <div className="flex items-center gap-2">
+                      <Landmark className="h-4 w-4 text-primary" /> {a.display_name}
+                      {primaryIds.has(a.id) && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 text-[10px] font-semibold" data-testid={`acceptance-primary-${a.id}`}>
+                          <Star className="h-3 w-3" /> Primary
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-3 pr-4 font-mono text-xs" data-testid={`acceptance-vpa-${a.id}`}>{a.upi_vpa}</td>
                   <td className="py-3 pr-4">{a.bank_name || "—"}</td>
@@ -215,6 +249,12 @@ export default function PaymentAcceptance() {
                           <Button size="sm" variant="outline" className="h-7" data-testid={`acceptance-toggle-${a.id}`} onClick={() => toggle(a)}>{a.enabled ? "Disable" : "Enable"}</Button>
                           {a.verification_status === "unverified" && (
                             <Button size="sm" variant="outline" className="h-7" data-testid={`acceptance-verify-${a.id}`} onClick={() => requestVerification(a)}><ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verify</Button>
+                          )}
+                          {a.verification_status === "pending" && (
+                            <>
+                              <Button size="sm" variant="outline" className="h-7 text-emerald-500" data-testid={`acceptance-approve-${a.id}`} onClick={() => decide(a, "verified")}><Check className="h-3.5 w-3.5 mr-1" /> Mark Verified</Button>
+                              <Button size="sm" variant="outline" className="h-7 text-destructive" data-testid={`acceptance-reject-${a.id}`} onClick={() => decide(a, "rejected")}><X className="h-3.5 w-3.5 mr-1" /> Reject</Button>
+                            </>
                           )}
                           <Button size="icon" variant="ghost" className="h-7 w-7" data-testid={`acceptance-history-${a.id}`} onClick={() => openAudit(a)}><History className="h-3.5 w-3.5" /></Button>
                           <Button size="icon" variant="ghost" className="h-7 w-7" data-testid={`acceptance-edit-${a.id}`} onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5" /></Button>

@@ -867,3 +867,18 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Tests: tests/test_payment_acceptance.py now 8 (added request-verification + per-account audit).
   Testing agent iteration_25: backend 100% (25 regression + 3 new), frontend 100% (Verify + History).
   No existing payment/provider/ledger/routing/checkout behavior changed.
+
+## Payment Acceptance follow-ups 2: Primary Badge · Checkout UPI Block · Verification States · CSV Export (2026-06, additive)
+- Primary VPA Badge (frontend): highest-priority ENABLED account per currency shows a "Primary" badge
+  (acceptance-primary-{id}); recomputes when accounts are disabled/priority changes.
+- Checkout UPI Block (frontend): CheckoutPage renders session.acceptance as a "Pay to this UPI ID"
+  panel (checkout-upi-block) with the VPA + copy button; absent when no eligible account.
+- Verification States UI + API: NEW POST /api/payment-acceptance/accounts/{id}/verification
+  {status: verified|rejected} — MANUAL operator decision, valid ONLY from 'pending' (400 otherwise),
+  invalid status 400, no re-decide after finalized; audited as .verify/.reject with manual_decision.
+  UI shows Mark Verified / Reject buttons for pending accounts. No fake/auto success.
+- Acceptance Report: NEW GET /api/payment-acceptance/accounts/export.csv (tenant-scoped, .view perm)
+  -> text/csv of accounts + verification/activity; UI "Export CSV" header button (export-acceptance-button).
+- Tests: tests/test_payment_acceptance.py now 10 (added manual decision + csv export). Testing agent
+  iteration_26: backend 100% (27), frontend 100% (Primary move, verify/approve+reject, CSV, checkout
+  +/- block). No existing payment/provider/ledger/routing/checkout behavior changed.

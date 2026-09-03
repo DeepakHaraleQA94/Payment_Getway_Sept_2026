@@ -5,10 +5,14 @@ system. Full CRUD + enable/disable/priority with strict tenant isolation, granul
 server-side VPA validation, audit logging (VPA masked, no secrets), and rate limiting. Does NOT
 process transactions; a future authorized provider plugin may reference an eligible account.
 """
+import io
+import csv
 import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +29,10 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/api/payment-acceptance", tags=["payment-acceptance"])
+
+
+class VerificationDecision(BaseModel):
+    status: str  # 'verified' or 'rejected' (manual operator decision from 'pending')
 
 # Basic, safe UPI VPA format: local@handle (no fake bank verification implied).
 _VPA_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.\-_]{1,255}@[a-zA-Z][a-zA-Z0-9.\-_]{1,63}$")
@@ -99,6 +107,31 @@ async def list_eligible_accounts(country: str, currency: str, environment: str =
             PaymentAcceptanceAccount.environment == environment,
         ).order_by(PaymentAcceptanceAccount.priority, PaymentAcceptanceAccount.created_at))
     return res.scalars().all()
+
+
+@router.get("/accounts/export.csv")
+async def export_accounts(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
+                          user=Depends(require_permission("payment_acceptance_account.view"))):
+    """Per-tenant compliance export of acceptance accounts + their verification state/activity."""
+    tid = resolve_tenant_id(user, tenant_id)
+    res = await db.execute(
+        select(PaymentAcceptanceAccount).where(PaymentAcceptanceAccount.tenant_id == tid)
+        .order_by(PaymentAcceptanceAccount.priority, PaymentAcceptanceAccount.created_at))
+    rows = [[
+        str(a.id), a.display_name, a.account_type, a.upi_vpa or "", a.bank_name or "",
+        a.account_holder_name or "", a.currency, a.country, a.environment,
+        "enabled" if a.enabled else "disabled", a.priority, a.verification_status,
+        a.created_at.isoformat(), a.updated_at.isoformat(),
+    ] for a in res.scalars().all()]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["id", "display_name", "account_type", "upi_vpa", "bank_name", "account_holder_name",
+                     "currency", "country", "environment", "status", "priority", "verification_status",
+                     "created_at", "updated_at"])
+    writer.writerows(rows)
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+                             headers={"Content-Disposition": 'attachment; filename="payment_acceptance_accounts.csv"'})
 
 
 @router.get("/accounts/{account_id}", response_model=AcceptanceAccountOut)
@@ -244,6 +277,32 @@ async def account_audit(account_id: uuid.UUID, limit: int = 50, db: AsyncSession
         ).order_by(AuditLog.created_at.desc()).limit(min(max(limit, 1), 200)))
     return [{"id": str(l.id), "action": l.action, "actor_email": l.actor_email,
              "changes": l.changes, "created_at": l.created_at.isoformat()} for l in res.scalars().all()]
+
+
+@router.post("/accounts/{account_id}/verification", response_model=AcceptanceAccountOut)
+async def decide_verification(account_id: uuid.UUID, body: VerificationDecision,
+                              db: AsyncSession = Depends(get_db),
+                              user=Depends(require_permission("payment_acceptance_account.manage"))):
+    """Manual operator decision to finalize verification: pending -> verified | rejected.
+
+    Explicitly a MANUAL decision (audited as such); it does not fabricate any provider/bank success.
+    Only valid from the 'pending' state (an account must be submitted for verification first).
+    """
+    if body.status not in ("verified", "rejected"):
+        raise HTTPException(status_code=400, detail="status must be 'verified' or 'rejected'")
+    acct = await _load(db, account_id, user)
+    if acct.verification_status != "pending":
+        raise HTTPException(status_code=400,
+                            detail=f"A decision can only be made on a 'pending' account (currently '{acct.verification_status}')")
+    acct.verification_status = body.status
+    acct.updated_by = str(user.id)
+    await record_audit(db, action=f"payment_acceptance_account.{'verify' if body.status == 'verified' else 'reject'}",
+                       resource_type="payment_acceptance_account", resource_id=acct.id,
+                       tenant_id=acct.tenant_id, actor_id=str(user.id), actor_email=user.email,
+                       changes={"verification_status": body.status, "manual_decision": True})
+    await db.commit()
+    await db.refresh(acct)
+    return acct
 
 
 @router.delete("/accounts/{account_id}")

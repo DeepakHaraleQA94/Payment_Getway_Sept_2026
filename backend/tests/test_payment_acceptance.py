@@ -143,6 +143,35 @@ def test_per_account_audit_trail():
     c.close()
 
 
+def test_manual_verification_decision():
+    c = _client()
+    tid = _tenant(c, "acme")
+    a = c.post("/api/payment-acceptance/accounts", params={"tenant_id": tid}, json=_mk()).json()
+    # cannot decide before it is pending
+    assert c.post(f"/api/payment-acceptance/accounts/{a['id']}/verification", json={"status": "verified"}).status_code == 400
+    c.post(f"/api/payment-acceptance/accounts/{a['id']}/request-verification")
+    ok = c.post(f"/api/payment-acceptance/accounts/{a['id']}/verification", json={"status": "verified"})
+    assert ok.status_code == 200 and ok.json()["verification_status"] == "verified"
+    # cannot decide again once finalized
+    assert c.post(f"/api/payment-acceptance/accounts/{a['id']}/verification", json={"status": "rejected"}).status_code == 400
+    # invalid status rejected
+    b = c.post("/api/payment-acceptance/accounts", params={"tenant_id": tid}, json=_mk()).json()
+    c.post(f"/api/payment-acceptance/accounts/{b['id']}/request-verification")
+    assert c.post(f"/api/payment-acceptance/accounts/{b['id']}/verification", json={"status": "approved"}).status_code == 400
+    c.close()
+
+
+def test_csv_export():
+    c = _client()
+    tid = _tenant(c, "acme")
+    c.post("/api/payment-acceptance/accounts", params={"tenant_id": tid}, json=_mk())
+    r = c.get("/api/payment-acceptance/accounts/export.csv", params={"tenant_id": tid})
+    assert r.status_code == 200 and "text/csv" in r.headers.get("content-type", "")
+    header = r.text.splitlines()[0]
+    assert "upi_vpa" in header and "verification_status" in header
+    c.close()
+
+
 def test_audit_masks_vpa_and_no_secret_leak():
     c = _client()
     tid = _tenant(c, "acme")

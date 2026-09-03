@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Lock, CheckCircle2, Zap, Loader2 } from "lucide-react";
+import { Lock, CheckCircle2, Zap, Loader2, Copy } from "lucide-react";
+import { toast } from "sonner";
 import { api, money, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,22 @@ export default function CheckoutPage() {
               <span className="text-xs font-mono text-muted-foreground">{session?.reference}</span>
             </div>
             <p className="text-sm text-muted-foreground mb-6">{session?.description || "Complete your payment below."}</p>
+
+            {session?.acceptance?.upi_vpa && (
+              <div className="mb-6 rounded-lg border border-border bg-secondary/40 p-4" data-testid="checkout-upi-block">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Pay to this UPI ID</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm truncate" data-testid="checkout-upi-vpa">{session.acceptance.upi_vpa}</p>
+                    <p className="text-xs text-muted-foreground">{session.acceptance.display_name}{session.acceptance.bank_name ? ` · ${session.acceptance.bank_name}` : ""}</p>
+                  </div>
+                  <Button variant="outline" size="sm" className="shrink-0" data-testid="checkout-upi-copy"
+                    onClick={() => { navigator.clipboard?.writeText(session.acceptance.upi_vpa); toast.success("UPI ID copied"); }}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {session?.status === "expired" ? (
               <p className="text-sm text-amber-400" data-testid="checkout-expired">This checkout link has expired.</p>
