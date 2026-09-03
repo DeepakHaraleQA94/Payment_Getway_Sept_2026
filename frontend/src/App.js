@@ -26,6 +26,7 @@ import Checkout from "@/pages/Checkout";
 import Webhooks from "@/pages/Webhooks";
 import Reports from "@/pages/Reports";
 import CheckoutPage from "@/pages/CheckoutPage";
+import ReceiptPage from "@/pages/ReceiptPage";
 import Security from "@/pages/Security";
 import { ForgotPassword, ResetPassword } from "@/pages/PasswordReset";
 import { SuperAdminGuard, SAOverview, SAAdmins, SATenants, SAFeatures, SARoles } from "@/pages/SuperAdmin";
@@ -56,6 +57,7 @@ function AppRouter() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/checkout/:token" element={<CheckoutPage />} />
+      <Route path="/receipt/:token" element={<ReceiptPage />} />
       <Route path="/superadmin" element={<SuperAdminGuard><SAOverview /></SuperAdminGuard>} />
       <Route path="/superadmin/admins" element={<SuperAdminGuard><SAAdmins /></SuperAdminGuard>} />
       <Route path="/superadmin/tenants" element={<SuperAdminGuard><SATenants /></SuperAdminGuard>} />

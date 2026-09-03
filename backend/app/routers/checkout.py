@@ -11,6 +11,7 @@ from app.core.deps import get_current_user, get_tenant_from_api_key, require_fea
 from app.core.ratelimit import rate_limit
 from app.core.security import generate_token
 from app.models.commerce import CheckoutSession
+from app.models.payment import Payment
 from app.models.tenant import Tenant
 from app.schemas import CheckoutCreate, CheckoutOut, CheckoutPay
 from app.services import payment_engine
@@ -97,6 +98,36 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db),
         "description": session.description,
         "status": "expired" if (expired and session.status == "open") else session.status,
         "success_url": session.success_url,
+    }
+
+
+@router.get("/public/receipts/{token}")
+async def public_get_receipt(token: str, db: AsyncSession = Depends(get_db),
+                             _rl: None = Depends(rate_limit("receipt_get", 60, 60))):
+    """Public, non-enumerable hosted payment receipt (no auth). Never exposes secrets.
+
+    The receipt token is a 192-bit random value stored on the payment when its receipt is sent;
+    the payment is looked up by that token and must be in a final success state.
+    """
+    res = await db.execute(select(Payment).where(
+        Payment.metadata_json["receipt_token"].astext == token,
+        Payment.status.in_(("succeeded", "captured"))))
+    payment = res.scalar_one_or_none()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    tenant = await db.get(Tenant, payment.tenant_id)
+    logo_url = f"/api/public/files/{tenant.brand_logo_file_id}" if tenant and tenant.brand_logo_file_id else None
+    return {
+        "reference": payment.reference,
+        "amount_minor": payment.amount_minor,
+        "currency": payment.currency,
+        "status": payment.status,
+        "provider_txn_id": payment.provider_txn_id,
+        "created_at": payment.created_at.isoformat() if payment.created_at else None,
+        "merchant": tenant.name if tenant else "Merchant",
+        "support_email": tenant.contact_email if tenant else None,
+        "brand_accent": tenant.brand_accent if tenant else "#3B82F6",
+        "logo_url": logo_url,
     }
 
 

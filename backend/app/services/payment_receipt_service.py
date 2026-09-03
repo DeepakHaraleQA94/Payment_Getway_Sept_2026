@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from app.core.config import settings
+from app.core.security import generate_token
 from app.models.payment import Payment
 from app.models.tenant import Tenant
 from app.services import email_service
@@ -35,7 +37,8 @@ def _row(label: str, value: str) -> str:
     )
 
 
-def _build_html(*, reference, amount_str, status, provider_txn, when, tenant_name, support_email) -> str:
+def _build_html(*, reference, amount_str, status, provider_txn, when, tenant_name, support_email,
+                receipt_url=None) -> str:
     support_block = ""
     if support_email:
         support_block = (
@@ -43,6 +46,13 @@ def _build_html(*, reference, amount_str, status, provider_txn, when, tenant_nam
             f'Questions about this payment? Contact {tenant_name} at '
             f'<a href="mailto:{support_email}" style="color:#4f46e5;text-decoration:none">'
             f'{support_email}</a>.</p>'
+        )
+    button_block = ""
+    if receipt_url:
+        button_block = (
+            f'<a href="{receipt_url}" style="display:inline-block;background:#4f46e5;color:#ffffff;'
+            'text-decoration:none;font-size:13px;font-weight:600;padding:11px 20px;border-radius:8px;'
+            'margin:4px 0 20px">View receipt</a>'
         )
     rows = "".join([
         _row("Reference", reference),
@@ -66,6 +76,7 @@ def _build_html(*, reference, amount_str, status, provider_txn, when, tenant_nam
         'Payment successful</div>'
         f'<h1 style="margin:8px 0 4px;color:#111827;font-size:26px;font-weight:700">{amount_str}</h1>'
         f'<p style="margin:0 0 20px;color:#6b7280;font-size:13px">Thank you for your payment to {tenant_name}.</p>'
+        f'{button_block}'
         '<table style="width:100%;border-collapse:collapse;border-top:1px solid #f3f4f6">'
         f'{rows}'
         '</table>'
@@ -78,7 +89,8 @@ def _build_html(*, reference, amount_str, status, provider_txn, when, tenant_nam
     )
 
 
-def _build_text(*, reference, amount_str, status, provider_txn, when, tenant_name, support_email) -> str:
+def _build_text(*, reference, amount_str, status, provider_txn, when, tenant_name, support_email,
+                receipt_url=None) -> str:
     lines = [
         f"Payment successful — {amount_str}",
         f"Thank you for your payment to {tenant_name}.",
@@ -90,6 +102,8 @@ def _build_text(*, reference, amount_str, status, provider_txn, when, tenant_nam
         f"Date & time: {when}",
         f"Merchant: {tenant_name}",
     ]
+    if receipt_url:
+        lines += ["", f"View / print your receipt: {receipt_url}"]
     if support_email:
         lines += ["", f"Questions? Contact {tenant_name} at {support_email}."]
     return "\n".join(lines)
@@ -113,9 +127,13 @@ async def send_payment_receipt(db, *, payment: Payment) -> dict | None:
 
         when = (payment.created_at or datetime.now(timezone.utc)).strftime("%d %b %Y, %H:%M UTC")
         amount_str = _format_amount(payment.amount_minor, payment.currency)
+        # A non-enumerable hosted-receipt token so the customer (and operators) can open a
+        # printable copy. Persisted only when the send is not a transient failure.
+        token = md.get("receipt_token") or generate_token(24)
+        receipt_url = f"{settings.frontend_url.rstrip('/')}/receipt/{token}"
         fields = dict(reference=payment.reference, amount_str=amount_str, status=payment.status,
                       provider_txn=payment.provider_txn_id, when=when, tenant_name=tenant_name,
-                      support_email=support_email)
+                      support_email=support_email, receipt_url=receipt_url)
 
         result = email_service.send_email(
             to=payment.customer_email,
@@ -128,6 +146,7 @@ async def send_payment_receipt(db, *, payment: Payment) -> dict | None:
         if result.get("status") != "send_failed":
             md["receipt_sent_at"] = datetime.now(timezone.utc).isoformat()
             md["receipt_status"] = result.get("status")
+            md["receipt_token"] = token
             payment.metadata_json = md
         return result
     except Exception as exc:  # pragma: no cover - defensive; never break the payment flow

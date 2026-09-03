@@ -702,3 +702,21 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Tests: tests/test_payment_receipt.py (9 unit) + tests/test_payment_receipt_live.py (live API).
   Testing agent iteration_20: 100% backend, 68/68 pass (regression capture_void/financial_integrity/
   reports_and_alert_history green). Live e2e: real Resend send (receipt_status='sent'), marker persisted.
+
+## Receipt Download (hosted page) + Operator Receipt Log (2026-06, ADDITIVE)
+- Receipt Download: the receipt email now embeds a "View receipt" link to a public, non-enumerable
+  hosted receipt page. payment_receipt_service generates a 192-bit receipt_token (stored in
+  metadata_json['receipt_token'], persisted only on non-transient send) and links
+  {FRONTEND_URL}/receipt/{token}. New public endpoint GET /api/public/receipts/{token} (checkout.py,
+  no auth, rate-limited) looks up the payment by token in a final success state and returns
+  reference/amount/currency/status/provider_txn/created_at/merchant/support_email/brand_accent/logo
+  — never any secret. 404 for unknown token. New page frontend/src/pages/ReceiptPage.jsx (route
+  /receipt/:token) renders a branded printable receipt with a Print / Save as PDF button (window.print).
+- Operator Receipt Log: the existing Payment Details dialog (Payments.jsx) now has a "Customer Receipt"
+  section showing the customer email, a status badge (Sent / Failed / Skipped / Not sent yet), the
+  sent timestamp, and a "View receipt" link — read from payment.metadata (receipt_status,
+  receipt_sent_at, receipt_token). Payments without a customer email show a clear no-receipt note.
+- Tests: backend live e2e (payment -> token; public receipt 200 + no secrets; bad token 404) and
+  unit suite (9) pass. Testing agent iteration_21: frontend 100% (5/5 — receipt log positive/negative,
+  hosted page valid/invalid token, routing-trace regression). Additive; no existing behavior changed.
+- Note: test_commerce.py still uses the retired admin@cloudpay.io (pre-existing env noise, unrelated).

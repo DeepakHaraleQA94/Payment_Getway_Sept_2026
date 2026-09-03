@@ -1,0 +1,100 @@
+import { useEffect, useState, useCallback } from "react";
+import { useParams } from "react-router-dom";
+import { motion } from "framer-motion";
+import { CheckCircle2, Printer, Loader2, Zap } from "lucide-react";
+import { api, money, formatApiError } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+
+function Row({ label, value, testid }) {
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-border/60 last:border-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-right break-all" data-testid={testid}>{value}</span>
+    </div>
+  );
+}
+
+export default function ReceiptPage() {
+  const { token } = useParams();
+  const [receipt, setReceipt] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/public/receipts/${token}`);
+      setReceipt(data);
+    } catch (e) {
+      setError(formatApiError(e.response?.data?.detail) || "Receipt not found");
+    } finally { setLoading(false); }
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center cp-grid-bg"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
+
+  if (error || !receipt) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 cp-grid-bg">
+        <div className="w-full max-w-md rounded-lg border border-border bg-card p-8 text-center" data-testid="receipt-error">
+          <p className="text-sm text-red-400">{error || "Receipt not found"}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const accent = receipt.brand_accent || "#4f46e5";
+  const when = receipt.created_at ? new Date(receipt.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 cp-grid-bg print:bg-white print:p-0" data-testid="public-receipt-page">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+        className="w-full max-w-md rounded-lg border border-border bg-card overflow-hidden print:border-0 print:shadow-none">
+        <div className="px-7 py-5 flex items-center gap-2" style={{ background: "#111827" }}>
+          {receipt.logo_url ? (
+            <img src={`${process.env.REACT_APP_BACKEND_URL}${receipt.logo_url}`} alt="logo" data-testid="receipt-logo"
+              className="h-8 w-8 rounded-lg object-contain bg-white/5" />
+          ) : (
+            <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: accent }}>
+              <Zap className="h-5 w-5 text-white" strokeWidth={2.5} />
+            </div>
+          )}
+          <div className="leading-tight">
+            <div className="font-heading text-base font-bold text-white">CloudPay</div>
+            <div className="text-[11px] text-gray-400">Payment receipt</div>
+          </div>
+        </div>
+
+        <div className="p-7">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-3 py-1 text-xs font-semibold mb-3" data-testid="receipt-status">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Payment successful
+          </div>
+          <h1 className="font-heading text-3xl font-bold" data-testid="receipt-amount">{money(receipt.amount_minor, receipt.currency)}</h1>
+          <p className="text-sm text-muted-foreground mt-1 mb-5">Thank you for your payment to {receipt.merchant}.</p>
+
+          <div className="rounded-lg border border-border bg-secondary/30 px-4">
+            <Row label="Reference" value={receipt.reference} testid="receipt-reference" />
+            <Row label="Amount" value={money(receipt.amount_minor, receipt.currency)} />
+            <Row label="Status" value={receipt.status?.charAt(0).toUpperCase() + receipt.status?.slice(1)} />
+            <Row label="Provider transaction" value={receipt.provider_txn_id || "—"} />
+            <Row label="Date & time" value={when} />
+            <Row label="Merchant" value={receipt.merchant} />
+          </div>
+
+          {receipt.support_email && (
+            <p className="text-xs text-muted-foreground mt-4">
+              Questions about this payment? Contact {receipt.merchant} at{" "}
+              <a href={`mailto:${receipt.support_email}`} className="text-primary" style={{ color: accent }}>{receipt.support_email}</a>.
+            </p>
+          )}
+
+          <Button className="w-full mt-6 text-white print:hidden" style={{ background: accent }} data-testid="receipt-print-button" onClick={() => window.print()}>
+            <Printer className="h-4 w-4 mr-2" /> Print / Save as PDF
+          </Button>
+          <p className="text-[11px] text-center text-muted-foreground mt-3">Generated by CloudPay · Sandbox environment</p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}

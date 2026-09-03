@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Undo2, Download, Info, GitBranch, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Undo2, Download, Info, GitBranch, CheckCircle2, XCircle, Mail, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { api, money, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -305,6 +305,41 @@ export default function Payments() {
                     Routed directly to <span className="font-mono">{detailFor.provider_key}</span> — no failover recorded.
                   </p>
                 )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Mail className="h-3.5 w-3.5" /> Customer Receipt
+                </div>
+                {(() => {
+                  const st = detailFor.metadata?.receipt_status;
+                  const sentAt = detailFor.metadata?.receipt_sent_at;
+                  const tok = detailFor.metadata?.receipt_token;
+                  const label = { sent: "Sent", send_failed: "Failed", skipped_no_provider: "Skipped (no email provider)", no_recipient: "No recipient" }[st];
+                  const tone = st === "sent" ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/10"
+                    : st === "send_failed" ? "text-destructive border-destructive/20 bg-destructive/10"
+                    : "text-muted-foreground border-border bg-secondary/40";
+                  if (!detailFor.customer_email) {
+                    return <p className="text-xs text-muted-foreground" data-testid="receipt-log-none">No customer email — no receipt is sent.</p>;
+                  }
+                  return (
+                    <div className="rounded border border-border bg-secondary/40 px-3 py-2.5 space-y-2" data-testid="receipt-log">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono break-all">{detailFor.customer_email}</span>
+                        <span className={`ml-2 shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${tone}`} data-testid="receipt-log-status">
+                          {label || (sentAt ? "Sent" : "Not sent yet")}
+                        </span>
+                      </div>
+                      {sentAt && <div className="text-[11px] text-muted-foreground" data-testid="receipt-log-time">Sent {new Date(sentAt).toLocaleString()}</div>}
+                      {tok && (
+                        <a href={`/receipt/${tok}`} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" data-testid="receipt-log-link">
+                          <ExternalLink className="h-3 w-3" /> View receipt
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
