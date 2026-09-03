@@ -210,6 +210,42 @@ async def set_priority(account_id: uuid.UUID, body: AcceptancePriorityUpdate,
     return acct
 
 
+@router.post("/accounts/{account_id}/request-verification", response_model=AcceptanceAccountOut)
+async def request_verification(account_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+                               user=Depends(require_permission("payment_acceptance_account.manage"))):
+    """Move an account from 'unverified' -> 'pending' so a REAL verifier can process it later.
+    Never marks 'verified' (no fake verification). Only valid from the 'unverified' state."""
+    acct = await _load(db, account_id, user)
+    if acct.verification_status != "unverified":
+        raise HTTPException(status_code=400,
+                            detail=f"Verification can only be requested from 'unverified' (currently '{acct.verification_status}')")
+    acct.verification_status = "pending"
+    acct.updated_by = str(user.id)
+    await record_audit(db, action="payment_acceptance_account.request_verification",
+                       resource_type="payment_acceptance_account", resource_id=acct.id,
+                       tenant_id=acct.tenant_id, actor_id=str(user.id), actor_email=user.email,
+                       changes={"verification_status": "pending"})
+    await db.commit()
+    await db.refresh(acct)
+    return acct
+
+
+@router.get("/accounts/{account_id}/audit")
+async def account_audit(account_id: uuid.UUID, limit: int = 50, db: AsyncSession = Depends(get_db),
+                        user=Depends(require_permission("payment_acceptance_account.view"))):
+    """Per-account activity trail (create/update/enable/disable/priority/archive). Tenant-isolated;
+    VPA is already masked in stored audit payloads."""
+    acct = await _load(db, account_id, user)
+    from app.models.platform import AuditLog
+    res = await db.execute(
+        select(AuditLog).where(
+            AuditLog.resource_type == "payment_acceptance_account",
+            AuditLog.resource_id == str(acct.id),
+        ).order_by(AuditLog.created_at.desc()).limit(min(max(limit, 1), 200)))
+    return [{"id": str(l.id), "action": l.action, "actor_email": l.actor_email,
+             "changes": l.changes, "created_at": l.created_at.isoformat()} for l in res.scalars().all()]
+
+
 @router.delete("/accounts/{account_id}")
 async def delete_account(account_id: uuid.UUID, db: AsyncSession = Depends(get_db),
                          user=Depends(require_permission("payment_acceptance_account.manage"))):

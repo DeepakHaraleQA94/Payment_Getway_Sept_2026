@@ -136,6 +136,31 @@ async def seed(db: AsyncSession) -> None:
         db.add(FeatureFlag(tenant_id=demo.id, key="vda_settlement", name="VDA Settlement", enabled=False,
                            description="Digital-asset boundary, disabled by default"))
 
+    # Tenant Admin role (tenant-scoped) so merchants can manage their own config, including the
+    # NEW payment acceptance accounts. Idempotent; kept in sync with the intended permission set.
+    res = await db.execute(select(Tenant).where(Tenant.slug == "acme"))
+    acme = res.scalar_one_or_none()
+    if acme is not None:
+        tenant_admin_codes = {
+            "user.manage", "provider.manage", "fee.manage", "payment.create", "refund.create",
+            "apikey.manage", "webhook.manage", "checkout.manage", "report.manage",
+            "payment_acceptance_account.view", "payment_acceptance_account.manage",
+        }
+        ta_perms = [p for p in all_perms if p.code in tenant_admin_codes]
+        res = await db.execute(select(Role).where(Role.name == "Tenant Admin", Role.tenant_id == acme.id))
+        ta_role = res.scalar_one_or_none()
+        if ta_role is None:
+            ta_role = Role(name="Tenant Admin", description="Manage this tenant's configuration",
+                           is_system=False, tenant_id=acme.id, permissions=ta_perms)
+            db.add(ta_role)
+        else:
+            # Ensure the acceptance permissions are present on the existing role (additive).
+            have = {p.code for p in ta_role.permissions}
+            for p in ta_perms:
+                if p.code not in have:
+                    ta_role.permissions.append(p)
+        await db.flush()
+
     # FX reference rates (mock)
     res = await db.execute(select(FxRate).limit(1))
     if res.scalar_one_or_none() is None:

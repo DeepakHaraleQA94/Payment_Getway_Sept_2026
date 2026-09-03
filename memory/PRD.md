@@ -850,3 +850,20 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   toast, Providers coexist). No existing payment/provider/ledger/routing behavior changed.
 - NOT implemented (requires real provider/PSP): real UPI processing, bank settlement, provider
   webhook confirmation, VPA bank-verification — out of scope by design.
+
+## Payment Acceptance follow-ups: Checkout Destination · Verification Workflow · Tenant Admin Role · Audit View (2026-06, additive)
+- Checkout Destination: public checkout (GET /api/public/checkout/{token}) now returns an additive
+  `acceptance` object (display_name, upi_vpa, bank_name, account_type, verification_status) = the
+  tenant's highest-priority ENABLED acceptance account matching the session currency; null if none.
+  Display-only; no processing; existing checkout fields/behavior unchanged.
+- Verification Workflow: POST /api/payment-acceptance/accounts/{id}/request-verification moves
+  unverified->pending only (400 otherwise); NEVER auto-'verified' (no fake verification). Audited as
+  payment_acceptance_account.request_verification. UI: "Verify" button shown only when unverified.
+- Tenant Admin Role: idempotent seed of a tenant-scoped "Tenant Admin" role (Acme) including
+  payment_acceptance_account.view/.manage (plus common tenant perms) so merchants can manage their
+  own VPAs. Existing roles untouched.
+- Acceptance Audit View: GET /api/payment-acceptance/accounts/{id}/audit (tenant-isolated, VPA masked)
+  + UI History dialog (per-account activity trail: create/enable/disable/priority/verification).
+- Tests: tests/test_payment_acceptance.py now 8 (added request-verification + per-account audit).
+  Testing agent iteration_25: backend 100% (25 regression + 3 new), frontend 100% (Verify + History).
+  No existing payment/provider/ledger/routing/checkout behavior changed.

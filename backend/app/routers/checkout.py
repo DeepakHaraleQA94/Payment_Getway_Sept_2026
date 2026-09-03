@@ -12,6 +12,7 @@ from app.core.deps import get_current_user, get_tenant_from_api_key, require_fea
 from app.core.ratelimit import rate_limit
 from app.core.security import generate_token
 from app.models.commerce import CheckoutSession
+from app.models.acceptance import PaymentAcceptanceAccount
 from app.models.payment import Payment
 from app.models.tenant import Tenant
 from app.schemas import CheckoutCreate, CheckoutOut, CheckoutPay
@@ -88,6 +89,18 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db),
     expired = session.expires_at and session.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) \
         if session.expires_at and session.expires_at.tzinfo is None else \
         (session.expires_at and session.expires_at < datetime.now(timezone.utc))
+    # ADDITIVE: surface the tenant's highest-priority eligible UPI acceptance account as the pay-to
+    # destination for a future UPI checkout. Display-only; no processing happens here.
+    acc_res = await db.execute(
+        select(PaymentAcceptanceAccount).where(
+            PaymentAcceptanceAccount.tenant_id == session.tenant_id,
+            PaymentAcceptanceAccount.enabled.is_(True),
+            PaymentAcceptanceAccount.currency == session.currency,
+        ).order_by(PaymentAcceptanceAccount.priority, PaymentAcceptanceAccount.created_at))
+    acc = acc_res.scalars().first()
+    acceptance = {"display_name": acc.display_name, "upi_vpa": acc.upi_vpa,
+                  "bank_name": acc.bank_name, "account_type": acc.account_type,
+                  "verification_status": acc.verification_status} if acc else None
     return {
         "token": session.token,
         "merchant": tenant.name if tenant else "Merchant",
@@ -99,6 +112,7 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db),
         "description": session.description,
         "status": "expired" if (expired and session.status == "open") else session.status,
         "success_url": session.success_url,
+        "acceptance": acceptance,
     }
 
 

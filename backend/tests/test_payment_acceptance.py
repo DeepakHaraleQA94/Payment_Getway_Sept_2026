@@ -116,6 +116,33 @@ def test_eligibility_filtering():
     c.close()
 
 
+def test_request_verification_workflow():
+    c = _client()
+    tid = _tenant(c, "acme")
+    a = c.post("/api/payment-acceptance/accounts", params={"tenant_id": tid}, json=_mk()).json()
+    assert a["verification_status"] == "unverified"
+    r = c.post(f"/api/payment-acceptance/accounts/{a['id']}/request-verification")
+    assert r.status_code == 200 and r.json()["verification_status"] == "pending"  # never 'verified'
+    # cannot request again once pending (no fake verification path)
+    assert c.post(f"/api/payment-acceptance/accounts/{a['id']}/request-verification").status_code == 400
+    c.close()
+
+
+def test_per_account_audit_trail():
+    c = _client()
+    tid = _tenant(c, "acme")
+    a = c.post("/api/payment-acceptance/accounts", params={"tenant_id": tid}, json=_mk()).json()
+    c.post(f"/api/payment-acceptance/accounts/{a['id']}/disable")
+    c.post(f"/api/payment-acceptance/accounts/{a['id']}/priority", json={"priority": 3})
+    trail = c.get(f"/api/payment-acceptance/accounts/{a['id']}/audit").json()
+    actions = {e["action"] for e in trail}
+    assert "payment_acceptance_account.create" in actions
+    assert "payment_acceptance_account.disable" in actions
+    # no full VPA leaked in the trail
+    assert a["upi_vpa"] not in str(trail)
+    c.close()
+
+
 def test_audit_masks_vpa_and_no_secret_leak():
     c = _client()
     tid = _tenant(c, "acme")

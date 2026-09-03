@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Landmark, Pencil, Trash2 } from "lucide-react";
+import { Plus, Landmark, Pencil, Trash2, ShieldCheck, History } from "lucide-react";
 import { toast } from "sonner";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -27,6 +27,8 @@ export default function PaymentAcceptance() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
+  const [auditFor, setAuditFor] = useState(null);
+  const [auditRows, setAuditRows] = useState([]);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
@@ -82,6 +84,22 @@ export default function PaymentAcceptance() {
       toast.success("Acceptance account archived");
       load();
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const requestVerification = async (a) => {
+    try {
+      await api.post(`/payment-acceptance/accounts/${a.id}/request-verification`);
+      toast.success("Verification requested — status is now pending");
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const openAudit = async (a) => {
+    setAuditFor(a);
+    try {
+      const { data } = await api.get(`/payment-acceptance/accounts/${a.id}/audit`);
+      setAuditRows(data);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); setAuditRows([]); }
   };
 
   return (
@@ -195,9 +213,16 @@ export default function PaymentAcceptance() {
                       {canManage && (
                         <>
                           <Button size="sm" variant="outline" className="h-7" data-testid={`acceptance-toggle-${a.id}`} onClick={() => toggle(a)}>{a.enabled ? "Disable" : "Enable"}</Button>
+                          {a.verification_status === "unverified" && (
+                            <Button size="sm" variant="outline" className="h-7" data-testid={`acceptance-verify-${a.id}`} onClick={() => requestVerification(a)}><ShieldCheck className="h-3.5 w-3.5 mr-1" /> Verify</Button>
+                          )}
+                          <Button size="icon" variant="ghost" className="h-7 w-7" data-testid={`acceptance-history-${a.id}`} onClick={() => openAudit(a)}><History className="h-3.5 w-3.5" /></Button>
                           <Button size="icon" variant="ghost" className="h-7 w-7" data-testid={`acceptance-edit-${a.id}`} onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5" /></Button>
                           <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" data-testid={`acceptance-delete-${a.id}`} onClick={() => remove(a)}><Trash2 className="h-3.5 w-3.5" /></Button>
                         </>
+                      )}
+                      {!canManage && (
+                        <Button size="icon" variant="ghost" className="h-7 w-7" data-testid={`acceptance-history-${a.id}`} onClick={() => openAudit(a)}><History className="h-3.5 w-3.5" /></Button>
                       )}
                     </div>
                   </td>
@@ -207,6 +232,29 @@ export default function PaymentAcceptance() {
           </table>
         </Panel>
       )}
+
+      <Dialog open={!!auditFor} onOpenChange={(v) => { if (!v) { setAuditFor(null); setAuditRows([]); } }}>
+        <DialogContent data-testid="acceptance-audit-dialog">
+          <DialogHeader>
+            <DialogTitle>Activity — {auditFor?.display_name}</DialogTitle>
+            <DialogDescription>Create / update / enable / disable / priority / verification events for this account.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-96 overflow-y-auto space-y-2">
+            {auditRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground" data-testid="acceptance-audit-empty">No activity recorded yet.</p>
+            ) : auditRows.map((r) => (
+              <div key={r.id} className="rounded border border-border bg-secondary/30 px-3 py-2 text-xs" data-testid={`acceptance-audit-row-${r.id}`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{r.action.replace("payment_acceptance_account.", "")}</span>
+                  <span className="text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
+                </div>
+                <div className="text-muted-foreground mt-1">{r.actor_email}</div>
+                {r.changes && <pre className="mt-1 whitespace-pre-wrap break-all text-[11px] text-muted-foreground">{JSON.stringify(r.changes)}</pre>}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
