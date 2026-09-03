@@ -776,3 +776,18 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   Awaiting the whsec_ value in backend/.env to finish activation.
 - Infra note: pod reset recovered (supervisor + postgres restarted, cloudpay role/db recreated,
   migrations to head c9d2e3f4a5b6, backend reseeded).
+
+## Currency Selector Revision — explicit choice, no default, full list (2026-06, FRONTEND-ONLY)
+- Per user revision of the earlier currency work (Payments.jsx only; no backend/DB/engine change):
+  * REMOVED all default/preselection logic (no India-INR auto-default, no tenant default_currency
+    preselect, no per-account narrowing). Initial state has NO currency; placeholder "Select currency";
+    the Process button is disabled until the user explicitly picks a currency; reset clears it.
+  * Currency options now = the FULL union of currencies advertised by provider capability discovery
+    (/api/providers/available), with a baseline of INR,USD,GBP,EUR,AUD,CAD,SGD so it's never empty.
+    Live options observed: AED,AUD,CAD,EUR,GBP,INR,SGD,USD.
+  * Each option shows "CODE — Name" via a CURRENCY_NAMES map (e.g. "INR — Indian Rupee").
+- Server-side capability validation remains authoritative and UNCHANGED (match_capability/plan_route);
+  unsupported currency/provider/country/environment still rejected 400 -> error toast. No FX/conversion.
+- Verified via UI screenshots: no default (placeholder), submit gated until chosen, full named list,
+  and explicit INR selection on Bharat Pay processed a ₹1,500 INR payment (succeeded) next to USD rows.
+- Only file changed: frontend/src/pages/Payments.jsx. No existing financial behavior changed.
