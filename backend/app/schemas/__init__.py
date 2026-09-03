@@ -398,3 +398,58 @@ class CheckoutOut(ORMBase):
 class CheckoutPay(BaseModel):
     customer_email: EmailStr | None = None
     card_number: str | None = None  # sandbox only; never stored
+
+
+
+# ---- Payment Acceptance Accounts (merchant-owned receiving destinations, e.g. UPI VPA) ----
+class AcceptanceAccountCreate(BaseModel):
+    account_type: str = "upi"
+    display_name: str = Field(min_length=1, max_length=120)
+    provider_key: str | None = Field(default=None, max_length=60)
+    bank_name: str | None = Field(default=None, max_length=120)
+    account_holder_name: str | None = Field(default=None, max_length=160)
+    upi_vpa: str | None = Field(default=None, max_length=256)
+    currency: str = Field(min_length=3, max_length=3)
+    country: str = Field(min_length=2, max_length=2)
+    environment: str = "sandbox"
+    enabled: bool = True
+    priority: int = 100
+    config: dict = {}
+
+
+class AcceptanceAccountUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    provider_key: str | None = Field(default=None, max_length=60)
+    bank_name: str | None = Field(default=None, max_length=120)
+    account_holder_name: str | None = Field(default=None, max_length=160)
+    upi_vpa: str | None = Field(default=None, max_length=256)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    environment: str | None = None
+    enabled: bool | None = None
+    priority: int | None = None
+    config: dict | None = None
+
+
+class AcceptancePriorityUpdate(BaseModel):
+    priority: int
+
+
+class AcceptanceAccountOut(ORMBase):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    account_type: str
+    display_name: str
+    provider_key: str | None
+    bank_name: str | None
+    account_holder_name: str | None
+    upi_vpa: str | None
+    currency: str
+    country: str
+    environment: str
+    enabled: bool
+    priority: int
+    verification_status: str
+    config: dict
+    created_at: datetime
+    updated_at: datetime

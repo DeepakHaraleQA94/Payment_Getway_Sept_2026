@@ -12,6 +12,7 @@ from app.models.iam import (  # noqa: F401
     role_permissions,
 )
 from app.models.feature import FeatureFlag  # noqa: F401
+from app.models.acceptance import PaymentAcceptanceAccount  # noqa: F401
 from app.models.payment import Payment, PaymentProvider, Refund, Reversal, UtrSubmission  # noqa: F401
 from app.models.finance import (  # noqa: F401
     FeeRule,

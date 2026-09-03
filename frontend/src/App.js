@@ -14,6 +14,7 @@ import Reconciliation from "@/pages/Reconciliation";
 import Ledger from "@/pages/Ledger";
 import Settlements from "@/pages/Settlements";
 import Providers from "@/pages/Providers";
+import PaymentAcceptance from "@/pages/PaymentAcceptance";
 import ProviderHealth from "@/pages/ProviderHealth";
 import Fees from "@/pages/Fees";
 import Tenants from "@/pages/Tenants";
@@ -77,6 +78,7 @@ function AppRouter() {
       <Route path="/dashboard/webhooks" element={<Protected><Webhooks /></Protected>} />
       <Route path="/dashboard/reports" element={<Protected><Reports /></Protected>} />
       <Route path="/dashboard/providers" element={<Protected><Providers /></Protected>} />
+      <Route path="/dashboard/payment-acceptance" element={<Protected><PaymentAcceptance /></Protected>} />
       <Route path="/dashboard/provider-health" element={<Protected><ProviderHealth /></Protected>} />
       <Route path="/dashboard/fees" element={<Protected><Fees /></Protected>} />
       <Route path="/dashboard/tenants" element={<Protected><Tenants /></Protected>} />

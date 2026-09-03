@@ -828,3 +828,25 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
      "Supported methods for JPY via Mock Sandbox Provider: bank, card, wallet".
 - Server-side match_capability/plan_route/routing/execution unchanged and authoritative. Backend
   financial regression unchanged (58/58 from prior run; no backend code touched this task).
+
+## Payment Acceptance Accounts — NEW additive capability (2026-06)
+- Separate from PaymentProvider (external PSP). A tenant-owned UPI RECEIVING destination; does NOT
+  process transactions. New table payment_acceptance_accounts (migration b7d4e1a9c260, applied):
+  tenant_id, account_type, display_name, provider_key?, bank_name?, account_holder_name?, upi_vpa?,
+  currency, country, environment, enabled, priority, verification_status (default 'unverified'),
+  config, audit/timestamp cols; unique(tenant_id,upi_vpa,environment).
+- API (app/routers/acceptance.py, prefix /api/payment-acceptance): GET/POST /accounts,
+  GET /accounts/eligible (read-only, priority-ordered, for a future UPI plugin), GET/PATCH/DELETE
+  /accounts/{id}, POST /accounts/{id}/enable|disable|priority. Server-side VPA validation+normalize,
+  tenant isolation, rate limiting (acceptance_write), audit (VPA masked, no secrets). No fake
+  verification (status stays 'unverified'; not settable via API).
+- Permissions (seed.py, additive): payment_acceptance_account.view / .manage (Super Admin gets all).
+- UI: new page frontend/src/pages/PaymentAcceptance.jsx (route /dashboard/payment-acceptance, nav
+  'Payment Acceptance' gated on .view) — table + add/edit dialog, enable/disable, inline priority,
+  delete. Existing Providers page untouched.
+- Tests: tests/test_payment_acceptance.py (6). Testing agent iteration_24: backend 100%
+  (6 acceptance + 3 RBAC incl. 403 for a user lacking the perm + capture/void regression 17),
+  frontend 100% (full CRUD, multiple accounts, enable/disable/priority/edit/delete, invalid-VPA
+  toast, Providers coexist). No existing payment/provider/ledger/routing behavior changed.
+- NOT implemented (requires real provider/PSP): real UPI processing, bank settlement, provider
+  webhook confirmation, VPA bank-verification — out of scope by design.

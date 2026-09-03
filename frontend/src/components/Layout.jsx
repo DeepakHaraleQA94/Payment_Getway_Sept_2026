@@ -24,6 +24,7 @@ const NAV = [
   { to: "/dashboard/webhooks", label: "Webhooks", icon: Webhook, testid: "nav-webhooks", feature: "webhooks", perm: "webhook.manage" },
   { to: "/dashboard/reports", label: "Reports", icon: FileText, testid: "nav-reports", feature: "reports", perm: "report.manage" },
   { to: "/dashboard/providers", label: "Providers", icon: Plug, testid: "nav-providers", feature: "providers", perm: "provider.manage" },
+  { to: "/dashboard/payment-acceptance", label: "Payment Acceptance", icon: Landmark, testid: "nav-payment-acceptance", perm: "payment_acceptance_account.view" },
   { to: "/dashboard/provider-health", label: "Provider Health", icon: HeartPulse, testid: "nav-provider-health" },
   { to: "/dashboard/fees", label: "Fee Engine", icon: Percent, testid: "nav-fees", perm: "fee.manage" },
   { to: "/dashboard/tenants", label: "Tenants", icon: Building2, testid: "nav-tenants", perm: "tenant.manage" },

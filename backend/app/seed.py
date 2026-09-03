@@ -36,6 +36,8 @@ PERMISSIONS = [
     ("webhook.manage", "Manage webhooks", "webhooks"),
     ("checkout.manage", "Manage checkout sessions", "checkout"),
     ("report.manage", "Generate and manage reports", "reports"),
+    ("payment_acceptance_account.view", "View payment acceptance accounts", "payment_acceptance"),
+    ("payment_acceptance_account.manage", "Manage payment acceptance accounts", "payment_acceptance"),
 ]
 
 
