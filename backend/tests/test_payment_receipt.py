@@ -151,3 +151,65 @@ def test_receipt_html_has_no_secrets(capture_email):
     html = capture_email[0]["html"].lower()
     for banned in ("api_key", "resend", "secret", "password", "bearer", "sk_test", "credential"):
         assert banned not in html
+
+
+
+def test_force_resend_bypasses_sent_marker(capture_email):
+    p = _payment()
+    db = _FakeDB(_tenant())
+    _run(payment_receipt_service.send_payment_receipt(db, payment=p))
+    assert len(capture_email) == 1
+    # normal (non-force) is a no-op once sent
+    _run(payment_receipt_service.send_payment_receipt(db, payment=p))
+    assert len(capture_email) == 1
+    # operator resend (force) sends again and keeps the SAME hosted-receipt token
+    token = p.metadata_json.get("receipt_token")
+    _run(payment_receipt_service.send_payment_receipt(db, payment=p, force=True))
+    assert len(capture_email) == 2
+    assert p.metadata_json.get("receipt_token") == token
+
+
+def test_branding_accent_and_logo_in_email(capture_email):
+    t = types.SimpleNamespace(name="Acme Corp", contact_email=None,
+                              brand_accent="#ff0055", brand_logo_file_id="logo-file-1")
+    p = _payment()
+    _run(payment_receipt_service.send_payment_receipt(_FakeDB(t), payment=p))
+    html = capture_email[0]["html"]
+    assert "#ff0055" in html  # tenant accent applied
+    assert "/api/public/files/logo-file-1" in html  # tenant logo applied
+
+
+def test_refund_notice_sent_and_idempotent(capture_email):
+    p = _payment()
+    db = _FakeDB(_tenant())
+    r = _run(payment_receipt_service.send_transaction_notice(db, payment=p, kind="refund",
+                                                             amount_minor=20000, ref_id="rf-1"))
+    assert r and r["status"] == "sent"
+    assert len(capture_email) == 1
+    assert "refunded" in capture_email[0]["html"].lower()
+    assert "200.00 USD" in capture_email[0]["html"]
+    # idempotent per (kind, ref_id)
+    again = _run(payment_receipt_service.send_transaction_notice(db, payment=p, kind="refund",
+                                                                amount_minor=20000, ref_id="rf-1"))
+    assert again is None
+    assert len(capture_email) == 1
+    # a different refund id sends a new notice
+    _run(payment_receipt_service.send_transaction_notice(db, payment=p, kind="refund",
+                                                         amount_minor=5000, ref_id="rf-2"))
+    assert len(capture_email) == 2
+
+
+def test_reversal_notice_sent(capture_email):
+    p = _payment()
+    r = _run(payment_receipt_service.send_transaction_notice(_FakeDB(_tenant()), payment=p,
+             kind="reversal", amount_minor=125000, ref_id="rv-1"))
+    assert r and r["status"] == "sent"
+    assert "reversed" in capture_email[0]["html"].lower()
+
+
+def test_notice_skipped_without_customer_email(capture_email):
+    p = _payment(customer_email=None)
+    r = _run(payment_receipt_service.send_transaction_notice(_FakeDB(_tenant()), payment=p,
+             kind="refund", amount_minor=1000, ref_id="rf-x"))
+    assert r is None
+    assert len(capture_email) == 0

@@ -1,10 +1,13 @@
-"""Customer payment receipt email — additive, idempotent, best-effort.
+"""Customer payment emails — receipts and refund/reversal notices. Additive, idempotent, best-effort.
 
-Sends a professional CloudPay-branded HTML receipt to the customer when a payment first
-reaches a final successful state (succeeded / captured). Reuses the existing provider-agnostic
-`email_service` (Resend when configured, noop otherwise). Never raises and never aborts the
-payment/ledger transaction; idempotent via a `receipt_sent_at` marker in payment metadata so
-webhook replays and operation retries never send a duplicate.
+Sends professional, tenant-branded HTML emails to the customer:
+- a payment RECEIPT when a payment first reaches a final success state (succeeded / captured);
+- a NOTICE when a payment is refunded or reversed, so the customer's trail stays complete.
+
+Reuses the existing provider-agnostic `email_service` (Resend when configured, noop otherwise).
+Never raises and never aborts the payment/ledger transaction. Idempotent via markers in the
+payment metadata so webhook replays and operation retries never send a duplicate. Applies each
+tenant's stored checkout branding (logo + accent) to both the email and the hosted receipt.
 """
 import logging
 from datetime import datetime, timezone
@@ -22,9 +25,28 @@ logger = logging.getLogger("cloudpay.receipt")
 # Final, customer-facing success states that warrant a receipt.
 FINAL_SUCCESS_STATES = {"succeeded", "captured"}
 
+_TONES = {
+    "success": ("#ecfdf5", "#047857"),
+    "refund": ("#fffbeb", "#b45309"),
+    "reversal": ("#fef2f2", "#b91c1c"),
+}
+
 
 def _format_amount(amount_minor: int, currency: str) -> str:
     return f"{(amount_minor or 0) / 100:,.2f} {currency}"
+
+
+def _brand(tenant) -> dict:
+    accent = getattr(tenant, "brand_accent", None) or "#4f46e5"
+    logo_file = getattr(tenant, "brand_logo_file_id", None)
+    logo_url = (f"{settings.frontend_url.rstrip('/')}/api/public/files/{logo_file}"
+                if logo_file else None)
+    return {
+        "accent": accent,
+        "logo_url": logo_url,
+        "name": (tenant.name if tenant and tenant.name else "CloudPay"),
+        "support_email": getattr(tenant, "contact_email", None) if tenant else None,
+    }
 
 
 def _row(label: str, value: str) -> str:
@@ -37,109 +59,107 @@ def _row(label: str, value: str) -> str:
     )
 
 
-def _build_html(*, reference, amount_str, status, provider_txn, when, tenant_name, support_email,
-                receipt_url=None) -> str:
+def _render_html(*, headline, tone, amount_str, subtitle, rows, brand,
+                 button_url=None, button_label=None) -> str:
+    accent = brand["accent"]
+    bg, fg = _TONES.get(tone, _TONES["success"])
+    logo = (f'<img src="{brand["logo_url"]}" alt="logo" height="28" '
+            'style="height:28px;border-radius:6px;margin-right:10px;vertical-align:middle">'
+            if brand.get("logo_url") else "")
     support_block = ""
-    if support_email:
+    if brand.get("support_email"):
         support_block = (
             '<p style="margin:20px 0 0;color:#6b7280;font-size:12px;line-height:1.6">'
-            f'Questions about this payment? Contact {tenant_name} at '
-            f'<a href="mailto:{support_email}" style="color:#4f46e5;text-decoration:none">'
-            f'{support_email}</a>.</p>'
+            f'Questions about this payment? Contact {brand["name"]} at '
+            f'<a href="mailto:{brand["support_email"]}" style="color:{accent};text-decoration:none">'
+            f'{brand["support_email"]}</a>.</p>'
         )
     button_block = ""
-    if receipt_url:
+    if button_url and button_label:
         button_block = (
-            f'<a href="{receipt_url}" style="display:inline-block;background:#4f46e5;color:#ffffff;'
+            f'<a href="{button_url}" style="display:inline-block;background:{accent};color:#ffffff;'
             'text-decoration:none;font-size:13px;font-weight:600;padding:11px 20px;border-radius:8px;'
-            'margin:4px 0 20px">View receipt</a>'
+            f'margin:4px 0 20px">{button_label}</a>'
         )
-    rows = "".join([
-        _row("Reference", reference),
-        _row("Amount", amount_str),
-        _row("Status", status.capitalize()),
-        _row("Provider transaction", provider_txn or "—"),
-        _row("Date &amp; time", when),
-        _row("Merchant", tenant_name),
-    ])
+    rows_html = "".join(_row(l, v) for l, v in rows)
     return (
         '<div style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">'
         '<div style="max-width:520px;margin:0 auto;padding:32px 20px">'
-        '<div style="background:#111827;border-radius:12px 12px 0 0;padding:24px 28px">'
-        '<div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.02em">CloudPay</div>'
-        '<div style="color:#9ca3af;font-size:12px;margin-top:2px">Payment receipt</div>'
+        f'<div style="height:4px;background:{accent};border-radius:12px 12px 0 0"></div>'
+        '<div style="background:#111827;padding:22px 28px">'
+        f'<div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.02em">{logo}CloudPay</div>'
+        f'<div style="color:#9ca3af;font-size:12px;margin-top:2px">{brand["name"]}</div>'
         '</div>'
         '<div style="background:#ffffff;border-radius:0 0 12px 12px;padding:28px;'
         'box-shadow:0 1px 3px rgba(0,0,0,0.08)">'
-        '<div style="display:inline-block;background:#ecfdf5;color:#047857;font-size:12px;'
-        'font-weight:600;padding:6px 12px;border-radius:9999px;margin-bottom:8px">'
-        'Payment successful</div>'
+        f'<div style="display:inline-block;background:{bg};color:{fg};font-size:12px;'
+        f'font-weight:600;padding:6px 12px;border-radius:9999px;margin-bottom:8px">{headline}</div>'
         f'<h1 style="margin:8px 0 4px;color:#111827;font-size:26px;font-weight:700">{amount_str}</h1>'
-        f'<p style="margin:0 0 20px;color:#6b7280;font-size:13px">Thank you for your payment to {tenant_name}.</p>'
+        f'<p style="margin:0 0 20px;color:#6b7280;font-size:13px">{subtitle}</p>'
         f'{button_block}'
         '<table style="width:100%;border-collapse:collapse;border-top:1px solid #f3f4f6">'
-        f'{rows}'
+        f'{rows_html}'
         '</table>'
         f'{support_block}'
         '<hr style="border:none;border-top:1px solid #f3f4f6;margin:24px 0">'
         '<div style="color:#9ca3af;font-size:11px;line-height:1.6">'
-        'This receipt was generated by CloudPay. Sandbox environment. '
+        'This email was generated by CloudPay. Sandbox environment. '
         'Please keep it for your records.</div>'
         '</div></div></div>'
     )
 
 
-def _build_text(*, reference, amount_str, status, provider_txn, when, tenant_name, support_email,
-                receipt_url=None) -> str:
-    lines = [
-        f"Payment successful — {amount_str}",
-        f"Thank you for your payment to {tenant_name}.",
-        "",
-        f"Reference: {reference}",
-        f"Amount: {amount_str}",
-        f"Status: {status.capitalize()}",
-        f"Provider transaction: {provider_txn or '—'}",
-        f"Date & time: {when}",
-        f"Merchant: {tenant_name}",
-    ]
-    if receipt_url:
-        lines += ["", f"View / print your receipt: {receipt_url}"]
-    if support_email:
-        lines += ["", f"Questions? Contact {tenant_name} at {support_email}."]
+def _render_text(*, headline, amount_str, subtitle, rows, brand,
+                 button_url=None, button_label=None) -> str:
+    lines = [f"{headline} — {amount_str}", subtitle, ""]
+    lines += [f"{l}: {v}" for l, v in rows]
+    if button_url and button_label:
+        lines += ["", f"{button_label}: {button_url}"]
+    if brand.get("support_email"):
+        lines += ["", f"Questions? Contact {brand['name']} at {brand['support_email']}."]
     return "\n".join(lines)
 
 
-async def send_payment_receipt(db, *, payment: Payment) -> dict | None:
-    """Best-effort idempotent customer receipt. Returns the send result or None; never raises."""
+async def _tenant(db, tenant_id):
+    return (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+
+
+async def send_payment_receipt(db, *, payment: Payment, force: bool = False) -> dict | None:
+    """Best-effort idempotent customer receipt. `force=True` re-sends (operator resend).
+
+    Returns the send result or None; never raises.
+    """
     try:
         if payment.status not in FINAL_SUCCESS_STATES:
             return None
         if not payment.customer_email:
             return None
         md = dict(payment.metadata_json or {})
-        if md.get("receipt_sent_at"):
+        if md.get("receipt_sent_at") and not force:
             return None
 
-        tenant = (await db.execute(
-            select(Tenant).where(Tenant.id == payment.tenant_id))).scalar_one_or_none()
-        tenant_name = (tenant.name if tenant and tenant.name else "CloudPay")
-        support_email = tenant.contact_email if tenant else None
-
+        brand = _brand(await _tenant(db, payment.tenant_id))
         when = (payment.created_at or datetime.now(timezone.utc)).strftime("%d %b %Y, %H:%M UTC")
         amount_str = _format_amount(payment.amount_minor, payment.currency)
         # A non-enumerable hosted-receipt token so the customer (and operators) can open a
-        # printable copy. Persisted only when the send is not a transient failure.
+        # printable copy. Reused across resends; persisted only on a non-transient send.
         token = md.get("receipt_token") or generate_token(24)
         receipt_url = f"{settings.frontend_url.rstrip('/')}/receipt/{token}"
-        fields = dict(reference=payment.reference, amount_str=amount_str, status=payment.status,
-                      provider_txn=payment.provider_txn_id, when=when, tenant_name=tenant_name,
-                      support_email=support_email, receipt_url=receipt_url)
+        rows = [("Reference", payment.reference), ("Amount", amount_str),
+                ("Status", payment.status.capitalize()),
+                ("Provider transaction", payment.provider_txn_id or "—"),
+                ("Date & time", when), ("Merchant", brand["name"])]
+        subtitle = f"Thank you for your payment to {brand['name']}."
 
         result = email_service.send_email(
             to=payment.customer_email,
-            subject=f"Your {tenant_name} payment receipt — {payment.reference}",
-            body=_build_text(**fields),
-            html=_build_html(**fields),
+            subject=f"Your {brand['name']} payment receipt — {payment.reference}",
+            body=_render_text(headline="Payment successful", amount_str=amount_str,
+                              subtitle=subtitle, rows=rows, brand=brand,
+                              button_url=receipt_url, button_label="View / print your receipt"),
+            html=_render_html(headline="Payment successful", tone="success", amount_str=amount_str,
+                              subtitle=subtitle, rows=rows, brand=brand,
+                              button_url=receipt_url, button_label="View receipt"),
         )
 
         # Mark as sent unless the send transiently failed (so a retry can re-attempt).
@@ -147,9 +167,62 @@ async def send_payment_receipt(db, *, payment: Payment) -> dict | None:
             md["receipt_sent_at"] = datetime.now(timezone.utc).isoformat()
             md["receipt_status"] = result.get("status")
             md["receipt_token"] = token
+            if result.get("id"):
+                md["receipt_email_id"] = result.get("id")
             payment.metadata_json = md
         return result
     except Exception as exc:  # pragma: no cover - defensive; never break the payment flow
         logger.error("payment receipt send failed payment=%s error=%s",
                      getattr(payment, "id", None), exc)
+        return None
+
+
+async def send_transaction_notice(db, *, payment: Payment, kind: str, amount_minor: int,
+                                  ref_id, currency: str | None = None) -> dict | None:
+    """Best-effort idempotent refund/reversal notice to the customer. `kind` in {refund, reversal}.
+
+    Idempotent per (kind, ref_id) so it is safe against retries; never raises.
+    """
+    try:
+        if kind not in ("refund", "reversal"):
+            return None
+        if not payment.customer_email:
+            return None
+        md = dict(payment.metadata_json or {})
+        notices = dict(md.get("notices") or {})
+        key = f"{kind}:{ref_id}"
+        if notices.get(key):
+            return None
+
+        brand = _brand(await _tenant(db, payment.tenant_id))
+        cur = currency or payment.currency
+        amount_str = _format_amount(amount_minor, cur)
+        when = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+        headline = "Payment refunded" if kind == "refund" else "Payment reversed"
+        verb = "refunded" if kind == "refund" else "reversed"
+        subtitle = f"Your payment to {brand['name']} has been {verb}."
+        rows = [("Original reference", payment.reference),
+                (f"Amount {verb}", amount_str),
+                ("Original payment", _format_amount(payment.amount_minor, payment.currency)),
+                ("Date & time", when), ("Merchant", brand["name"])]
+
+        result = email_service.send_email(
+            to=payment.customer_email,
+            subject=f"Your {brand['name']} payment was {verb} — {payment.reference}",
+            body=_render_text(headline=headline, amount_str=amount_str, subtitle=subtitle,
+                              rows=rows, brand=brand),
+            html=_render_html(headline=headline, tone=kind, amount_str=amount_str,
+                              subtitle=subtitle, rows=rows, brand=brand),
+        )
+
+        if result.get("status") != "send_failed":
+            notices[key] = {"status": result.get("status"),
+                            "at": datetime.now(timezone.utc).isoformat(),
+                            "email_id": result.get("id")}
+            md["notices"] = notices
+            payment.metadata_json = md
+        return result
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("transaction notice send failed payment=%s kind=%s error=%s",
+                     getattr(payment, "id", None), kind, exc)
         return None

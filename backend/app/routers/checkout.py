@@ -2,10 +2,11 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_tenant_from_api_key, require_feature, require_permission, resolve_tenant_id
 from app.core.ratelimit import rate_limit
@@ -158,3 +159,58 @@ async def public_pay(token: str, body: CheckoutPay, db: AsyncSession = Depends(g
         return {"status": "paid", "payment_id": str(payment.id), "success_url": session.success_url}
     await db.commit()
     raise HTTPException(status_code=402, detail="Payment was declined by the sandbox provider")
+
+
+# Maps Resend event types to a compact delivery state stored on the payment.
+_RESEND_DELIVERY = {
+    "email.sent": "sent", "email.delivered": "delivered",
+    "email.delivery_delayed": "delayed", "email.bounced": "bounced",
+    "email.complained": "complained", "email.failed": "failed",
+}
+
+
+@router.post("/webhooks/resend")
+async def resend_delivery_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Inbound Resend webhook for email DELIVERY TRACKING (public, signature-verified).
+
+    Updates a payment's receipt delivery state (delivered / bounced / complained / ...) by matching
+    the Resend email id we stored when the receipt was sent. Idempotent, best-effort, never leaks
+    secrets. No-op (still 200) when RESEND_WEBHOOK_SECRET is not configured.
+    """
+    payload = await request.body()
+    secret = settings.resend_webhook_secret
+    if not secret:
+        return {"received": True, "disabled": True}
+
+    import resend
+    try:
+        event = resend.Webhooks.verify({
+            "payload": payload.decode(),
+            "headers": {
+                "id": request.headers.get("svix-id"),
+                "timestamp": request.headers.get("svix-timestamp"),
+                "signature": request.headers.get("svix-signature"),
+            },
+            "webhook_secret": secret,
+        })
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    etype = event.get("type", "")
+    data = event.get("data") or {}
+    email_id = data.get("email_id") or data.get("id")
+    delivery = _RESEND_DELIVERY.get(etype)
+    if not email_id or not delivery:
+        return {"received": True, "ignored": True}
+
+    res = await db.execute(select(Payment).where(
+        Payment.metadata_json["receipt_email_id"].astext == email_id))
+    payment = res.scalar_one_or_none()
+    if not payment:
+        return {"received": True, "unmatched": True}
+    md = dict(payment.metadata_json or {})
+    md["receipt_delivery"] = delivery
+    md["receipt_delivery_at"] = datetime.now(timezone.utc).isoformat()
+    payment.metadata_json = md
+    await db.commit()
+    return {"received": True, "delivery": delivery}

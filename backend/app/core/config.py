@@ -56,6 +56,8 @@ class Settings:
         self.sender_email: str = os.environ.get("SENDER_EMAIL", "")
         default_provider = "resend" if self.resend_api_key else "noop"
         self.email_provider: str = os.environ.get("EMAIL_PROVIDER", default_provider).lower()
+        # Resend inbound webhook signing secret (whsec_...) for email delivery tracking. Env-only.
+        self.resend_webhook_secret: str = os.environ.get("RESEND_WEBHOOK_SECRET", "")
 
         # Webhook retry policy (configurable)
         self.webhook_max_attempts: int = int(os.environ.get("WEBHOOK_MAX_ATTEMPTS", "8"))

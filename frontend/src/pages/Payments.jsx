@@ -21,6 +21,7 @@ export default function Payments() {
   const { selectedTenantId, hasPermission } = useAuth();
   const canCapture = hasPermission("payment.capture");
   const canVoid = hasPermission("payment.void");
+  const canResend = hasPermission("payment.create");
   const [payments, setPayments] = useState([]);
   const [providers, setProviders] = useState([]);
   const [open, setOpen] = useState(false);
@@ -33,6 +34,19 @@ export default function Payments() {
   const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: "mock", environment: "sandbox" });
   const [refundAmount, setRefundAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
+
+  const resendReceipt = async (p) => {
+    setResendBusy(true);
+    try {
+      const { data } = await api.post(`/payments/${p.id}/receipt/resend`);
+      toast.success(`Receipt resent to ${p.customer_email}`);
+      setDetailFor(data);
+      await load();
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    } finally { setResendBusy(false); }
+  };
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
@@ -331,11 +345,31 @@ export default function Payments() {
                         </span>
                       </div>
                       {sentAt && <div className="text-[11px] text-muted-foreground" data-testid="receipt-log-time">Sent {new Date(sentAt).toLocaleString()}</div>}
+                      {detailFor.metadata?.receipt_delivery && (() => {
+                        const d = detailFor.metadata.receipt_delivery;
+                        const dtone = d === "delivered" ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/10"
+                          : ["bounced", "complained", "failed"].includes(d) ? "text-destructive border-destructive/20 bg-destructive/10"
+                          : "text-muted-foreground border-border bg-secondary/40";
+                        return (
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className="text-muted-foreground">Delivery:</span>
+                            <span className={`rounded-full border px-2 py-0.5 font-semibold capitalize ${dtone}`} data-testid="receipt-log-delivery">{d}</span>
+                          </div>
+                        );
+                      })()}
                       {tok && (
                         <a href={`/receipt/${tok}`} target="_blank" rel="noreferrer"
                           className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" data-testid="receipt-log-link">
                           <ExternalLink className="h-3 w-3" /> View receipt
                         </a>
+                      )}
+                      {canResend && (detailFor.status === "succeeded" || detailFor.status === "captured") && (
+                        <div className="pt-1">
+                          <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="receipt-resend-button"
+                            disabled={resendBusy} onClick={() => resendReceipt(detailFor)}>
+                            <Mail className="h-3 w-3 mr-1" /> {resendBusy ? "Sending…" : "Resend receipt"}
+                          </Button>
+                        </div>
                       )}
                     </div>
                   );

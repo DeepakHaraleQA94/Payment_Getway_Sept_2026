@@ -1,0 +1,26 @@
+{
+  "summary": "Independent verification of 4 NEW additive receipt features (refund notice, reversal notice, receipt resend, disabled Resend webhook) plus regression. Backend: created new /app/backend/tests/test_new_receipt_features_live.py with 9 live-API tests — all PASS. Regression: test_payment_receipt.py (14) + test_financial_integrity.py + test_capture_void.py — 58/58 pass. Frontend E2E on the preview URL as super admin, tenant=Acme: created a mock succeeded payment WITH customer_email=finance@vortexglobal.info (NEW-1788447275, $25.75), Details dialog shows data-testid=receipt-log with status 'Sent', a working data-testid=receipt-resend-button, and data-testid=receipt-log-link -> /receipt/QBwe3dORbMtDGzEw6sA0-eCQhVnNnM9f. Clicking Resend triggered toast 'Receipt resent to finance@vortexglobal.info' and status stayed 'Sent' (token stable per backend response). Public receipt page loaded WITHOUT authentication showing public-receipt-page, receipt-amount=$25.75, receipt-print-button. Invalid token URL /receipt/BADTOKEN-XYZ rendered data-testid=receipt-error 'Receipt not found' with no public-receipt-page. Second payment WITHOUT customer email (NONE-*, succeeded) correctly shows data-testid=receipt-log-none and 0 resend buttons / 0 status badges. Backend edge cases confirmed: refund on succeeded payment records notice under metadata.notices['refund:{id}'] status='sent' and status becomes partially_refunded; reverse records 'reversal:{id}' status='sent' and status becomes reversed; resend on non-success (authorized) -> 400; resend without customer_email -> 400; unauthenticated resend -> 401; random uuid (cross-tenant) -> 404; POST /api/webhooks/resend with no secret configured returns 200 {received:true, disabled:true}. No secret-like tokens (api_key, resend_api, sk_test, webhook_secret, bearer, credential) leak in any payment/webhook response.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_new_receipt_features_live.py",
+    "/app/backend/tests/test_payment_receipt.py",
+    "/app/backend/tests/test_payment_receipt_live.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "resend_receipt endpoint correctly reuses metadata.receipt_token (verified: token in initial POST == token in POST /receipt/resend response), preserving hosted-link stability required by branding/print flow.",
+    "webhook disabled short-circuit occurs BEFORE the resend.Webhooks.verify call — no signature dependency, no accidental 500 when unset. Good.",
+    "resend endpoint 400s on non-success (authorized/pending/failed) and on missing customer email; 404 on cross-tenant / unknown id; requires payment.create — all matched.",
+    "Refund/reversal notices are stored idempotently keyed by (kind, ref_id) inside metadata.notices — a duplicate refund replay would not fire a duplicate email (covered in unit test test_refund_notice_sent_and_idempotent).",
+    "Payments responses/webhook responses never surface Resend api key, admin password, bearer, sk_test/sk_live, resend_api, webhook_secret, or 'credential' — verified via _assert_no_secrets across create/get/resend/webhook."
+  ],
+  "updated_files": ["/app/backend/tests/test_new_receipt_features_live.py"],
+  "success_rate": {"backend": "100% (9/9 new + 58/58 regression)", "frontend": "100% (all 7 sub-scenarios in spec verified)"},
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (super admin)",
+  "seed_data_creation": "Acme mock-provider payments created during run: NEW-1788447275 (with email, succeeded, receipt sent, then resent), NONE-1788447335 (no email, succeeded, no receipt), plus NRF-* test payments for refund/reversal in backend suite.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New live regression suite at /app/backend/tests/test_new_receipt_features_live.py covers refund notice, reversal notice, /receipt/resend (success/no-email/non-success/unauth/404), and /webhooks/resend disabled path. Run with: ADMIN_PASSWORD='...' python -m pytest tests/test_new_receipt_features_live.py -n0 -v. RESEND_WEBHOOK_SECRET remains unset — only disabled path testable. Hosted receipt token created during this run: QBwe3dORbMtDGzEw6sA0-eCQhVnNnM9f (resolves publicly). Screenshot format note: playwright PNG screenshots do NOT support quality param — used .png without quality when opening cross-context tabs.",
+  "rca of the issue": "N/A — no defects; feature works to spec."
+}

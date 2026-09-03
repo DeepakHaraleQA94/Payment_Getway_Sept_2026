@@ -17,7 +17,7 @@ from app.core.audit import record_audit
 from app.models.finance import LedgerEntry
 from app.models.payment import Payment, Refund, Reversal
 from app.providers.registry import get_provider
-from app.services import ledger_service, payment_state, webhook_service
+from app.services import ledger_service, payment_receipt_service, payment_state, webhook_service
 
 
 async def _existing_by_idem(db, tenant_id, idempotency_key):
@@ -129,6 +129,10 @@ async def create_reversal(
         db, tenant_id=tenant_id, event="payment.reversed",
         data={"reversal_id": str(reversal.id), "payment_id": str(payment.id),
               "amount_minor": int(credited), "currency": payment.currency, "status": "reversed"})
+    # Customer reversal notice (idempotent per reversal, best-effort — never aborts the reversal).
+    await payment_receipt_service.send_transaction_notice(
+        db, payment=payment, kind="reversal", amount_minor=int(credited),
+        ref_id=reversal.id, currency=payment.currency)
     await db.commit()
     await db.refresh(reversal)
     return reversal

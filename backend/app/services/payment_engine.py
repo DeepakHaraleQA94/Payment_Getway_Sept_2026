@@ -307,6 +307,10 @@ async def create_refund(
         data={"refund_id": str(refund.id), "payment_id": str(payment.id),
               "amount_minor": amount_minor, "currency": payment.currency, "status": refund.status},
     )
+    # Customer refund notice on success (idempotent per refund, best-effort — never aborts refund).
+    if result.success:
+        await payment_receipt_service.send_transaction_notice(
+            db, payment=payment, kind="refund", amount_minor=amount_minor, ref_id=refund.id)
     await db.commit()
     await db.refresh(refund)
     return refund

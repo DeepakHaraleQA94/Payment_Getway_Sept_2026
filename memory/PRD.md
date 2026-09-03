@@ -720,3 +720,29 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   unit suite (9) pass. Testing agent iteration_21: frontend 100% (5/5 — receipt log positive/negative,
   hosted page valid/invalid token, routing-trace regression). Additive; no existing behavior changed.
 - Note: test_commerce.py still uses the retired admin@cloudpay.io (pre-existing env noise, unrelated).
+
+## Refund/Reversal Notices + Merchant Branding + Delivery Tracking + Receipt Resend (2026-06, ADDITIVE)
+- Refund/Reversal Notice: on a successful refund (payment_engine.create_refund) or reversal
+  (reversal_service.create_reversal), the customer gets a branded email. payment_receipt_service
+  .send_transaction_notice(kind=refund|reversal) is idempotent per (kind, ref_id) via
+  metadata_json['notices'], best-effort, never aborts the financial txn. No refund/reversal/ledger
+  behavior changed.
+- Merchant Branding: payment_receipt_service._brand(tenant) applies each tenant's stored checkout
+  branding — brand_accent (accent strip, button, links, status pill) and brand_logo_file_id (logo in
+  email header via {FRONTEND_URL}/api/public/files/{id}) — to the receipt email, notices, and the
+  hosted receipt page (which already read accent/logo from the public endpoint).
+- Delivery Tracking: new signature-verified inbound Resend webhook POST /api/webhooks/resend
+  (checkout.py) using resend.Webhooks.verify (Svix HMAC). Maps event email_id -> payment via
+  metadata_json['receipt_email_id'] and stores metadata_json['receipt_delivery'] (delivered/bounced/
+  complained/...). Idempotent, never leaks secrets, and a safe no-op (200 disabled) until
+  RESEND_WEBHOOK_SECRET (whsec_..., env-only via settings.resend_webhook_secret) is configured.
+  Endpoint URL: {REACT_APP_BACKEND_URL}/api/webhooks/resend. Receipt Log shows a delivery badge
+  (data-testid=receipt-log-delivery) when present. NOTE: secret NOT set in this env — activate by
+  adding RESEND_WEBHOOK_SECRET to backend/.env + restart.
+- Receipt Resend: POST /api/payments/{id}/receipt/resend (require_permission payment.create,
+  tenant-isolated) re-sends the receipt (force=True) reusing the same hosted-receipt token; 400 for
+  no-email/non-success; 404 cross-tenant. Frontend: 'Resend receipt' button (receipt-resend-button)
+  in the Payment Details Customer Receipt section, gated on payment.create + final-success status.
+- Tests: test_payment_receipt.py now 14 unit; testing-agent test_new_receipt_features_live.py (9).
+  Testing agent iteration_22: backend 100% (9 new + 58 regression), frontend 100%, no issues.
+  Additive; financial behavior untouched.

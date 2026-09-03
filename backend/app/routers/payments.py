@@ -22,7 +22,7 @@ from app.schemas import (
     UtrSubmitCreate,
     VoidCreate,
 )
-from app.services import payment_engine, reversal_service, utr_service
+from app.services import payment_engine, payment_receipt_service, reversal_service, utr_service
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -142,6 +142,26 @@ async def void_payment(payment_id: uuid.UUID, body: VoidCreate, db: AsyncSession
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@router.post("/{payment_id}/receipt/resend", response_model=PaymentOut)
+async def resend_receipt(payment_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+                         user=Depends(require_permission("payment.create"))):
+    """Operator one-click resend of a customer payment receipt. Tenant-isolated; only for a
+    successful payment that has a customer email. Reuses the same hosted-receipt token."""
+    payment = await db.get(Payment, payment_id)
+    if not payment or (not user.is_superadmin and payment.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if payment.status not in ("succeeded", "captured"):
+        raise HTTPException(status_code=400, detail="A receipt is only available for a successful payment")
+    if not payment.customer_email:
+        raise HTTPException(status_code=400, detail="This payment has no customer email")
+    result = await payment_receipt_service.send_payment_receipt(db, payment=payment, force=True)
+    await db.commit()
+    await db.refresh(payment)
+    if result and result.get("status") == "send_failed":
+        raise HTTPException(status_code=502, detail="The receipt email could not be sent. Please try again.")
+    return payment
 
 
 @router.post("/utr", response_model=UtrOut)
