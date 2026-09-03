@@ -14,6 +14,7 @@ from app.providers.registry import get_provider, has_provider
 from app.services import (
     fee_engine,
     ledger_service,
+    payment_receipt_service,
     payment_state,
     risk_service,
     routing_engine,
@@ -223,6 +224,8 @@ async def create_payment(
         data={"payment_id": str(payment.id), "reference": reference, "amount_minor": amount_minor,
               "currency": currency, "status": payment.status, "provider_txn_id": payment.provider_txn_id},
     )
+    # Customer receipt on final success (idempotent, best-effort — never aborts the payment).
+    await payment_receipt_service.send_payment_receipt(db, payment=payment)
     await db.commit()
     await db.refresh(payment)
     return payment
@@ -376,6 +379,8 @@ async def capture_payment(
         data={"payment_id": str(payment.id), "reference": payment.reference,
               "amount_minor": cap_amount, "currency": payment.currency, "status": payment.status,
               "provider_txn_id": payment.provider_txn_id})
+    # Customer receipt on capture (idempotent, best-effort — never aborts the capture).
+    await payment_receipt_service.send_payment_receipt(db, payment=payment)
     await db.commit()
     await db.refresh(payment)
     return payment

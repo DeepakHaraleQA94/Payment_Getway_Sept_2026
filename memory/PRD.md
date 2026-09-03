@@ -682,3 +682,23 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Concurrency fix (this task's own code): capture_payment/void_payment FOR UPDATE selects now use
   execution_options(populate_existing=True) so the locked read refreshes in-memory status (previously
   a stale identity-map read let two concurrent ops both succeed). Verified deterministic.
+
+## Customer Payment Receipt Email (2026-06, LIVE via Resend, ADDITIVE)
+- New: a professional CloudPay-branded HTML receipt is emailed to the customer when a payment FIRST
+  reaches a final success state. Reuses the existing Resend adapter (sender finance@vortexglobal.info);
+  NO existing behavior modified/duplicated.
+- Service app/services/payment_receipt_service.py: send_payment_receipt(db, payment) —
+  FINAL_SUCCESS_STATES={'succeeded','captured'}; requires payment.customer_email; IDEMPOTENT via
+  payment.metadata_json['receipt_sent_at'] (+ receipt_status); marks sent unless provider returns
+  'send_failed' (transient -> allows retry); wrapped in try/except so it NEVER raises / never aborts
+  the payment/ledger transaction. Receipt shows reference, amount, currency, status, date/time,
+  provider txn ref, tenant/merchant name, and tenant contact_email ONLY when already configured.
+  No secrets ever rendered.
+- email_service.send_email + provider send gained an OPTIONAL html param (additive, backward
+  compatible); existing noop/report/reset flows unchanged.
+- Triggers wired before commit at all three final-success points: payment_engine.create_payment
+  (direct 'succeeded'), payment_engine.capture_payment ('captured'), config.py provider_inbound_webhook
+  reconcile (async 'succeeded'/'captured').
+- Tests: tests/test_payment_receipt.py (9 unit) + tests/test_payment_receipt_live.py (live API).
+  Testing agent iteration_20: 100% backend, 68/68 pass (regression capture_void/financial_integrity/
+  reports_and_alert_history green). Live e2e: real Resend send (receipt_status='sent'), marker persisted.

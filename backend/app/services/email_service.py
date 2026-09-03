@@ -17,14 +17,15 @@ class EmailProvider(Protocol):
     name: str
 
     def send(self, *, to: str, subject: str, body: str,
-             attachment_url: str | None, attachment: dict | None) -> dict: ...
+             attachment_url: str | None, attachment: dict | None,
+             html: str | None) -> dict: ...
 
 
 class NoopEmailProvider:
     """Records intent without sending. Used until a real provider is configured."""
     name = "noop"
 
-    def send(self, *, to, subject, body, attachment_url=None, attachment=None) -> dict:
+    def send(self, *, to, subject, body, attachment_url=None, attachment=None, html=None) -> dict:
         logger.info("email skipped (noop) to=%s subject=%s attachment=%s", to, subject,
                     bool(attachment) or attachment_url)
         return {"provider": "noop", "delivered": False, "status": "skipped_no_provider"}
@@ -53,8 +54,8 @@ class ResendEmailProvider:
         self._resend = resend
         self._sender = sender
 
-    def send(self, *, to, subject, body, attachment_url=None, attachment=None) -> dict:
-        html = _html_wrap(body)
+    def send(self, *, to, subject, body, attachment_url=None, attachment=None, html=None) -> dict:
+        html = html or _html_wrap(body)
         if attachment_url and not attachment:
             html = _html_wrap(f"{body}\n\nDownload: {attachment_url}")
         params = {"from": self._sender, "to": [to], "subject": subject, "html": html}
@@ -96,8 +97,9 @@ def get_email_provider() -> EmailProvider:
 
 
 def send_email(*, to: str | None, subject: str, body: str,
-               attachment_url: str | None = None, attachment: dict | None = None) -> dict:
+               attachment_url: str | None = None, attachment: dict | None = None,
+               html: str | None = None) -> dict:
     if not to:
         return {"provider": get_email_provider().name, "delivered": False, "status": "no_recipient"}
     return get_email_provider().send(to=to, subject=subject, body=body,
-                                     attachment_url=attachment_url, attachment=attachment)
+                                     attachment_url=attachment_url, attachment=attachment, html=html)

@@ -14,6 +14,7 @@ from app.models.finance import FeeRule
 from app.models.payment import Payment, PaymentProvider
 from app.providers.base import ChargeRequest, ProviderError
 from app.providers.registry import get_provider, has_provider, list_providers
+from app.services import payment_receipt_service
 from app.schemas import (
     FeatureFlagCreate,
     FeatureFlagOut,
@@ -295,6 +296,8 @@ async def provider_inbound_webhook(provider_key: str, request: Request,
                        actor_email=f"{provider_key}:webhook",
                        changes={"previous_state": prev, "new_state": event.normalized_status,
                                 "event_type": event.event_type, "correlation_id": str(payment.id)})
+    # Customer receipt when a payment reconciles to a final success (idempotent, best-effort).
+    await payment_receipt_service.send_payment_receipt(db, payment=payment)
     await db.commit()
     return {"received": True, "reconciled": True, "status": event.normalized_status}
 
