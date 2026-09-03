@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only verification of currency-aware New Payment UI on /dashboard/payments. All 7 scenarios PASSED: currency is a Select (no free-text), Acme(US) defaults to USD with options [EUR,GBP,USD] (INR/AED correctly absent), Bharat Pay(IN) defaults to INR with options [INR,USD], creating USD payment on Acme succeeded, creating INR and USD payments on Bharat Pay both succeeded, provider switch (auto vs mock) correctly changes option list (auto=union [AED,AUD,CAD,EUR,GBP,INR,SGD,USD], mock=[INR,USD]) and auto-corrects invalid selection, Details dialog opens correctly, tenant isolation preserved (Bharat Pay shows only BP-* rows), Export CSV button present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Payments.jsx effectiveCurrencies falls back to plugin.supported_currencies when the tenant lacks provider.view (silently returns []) — acceptable since server remains authoritative and UI keeps a final fallback to [USD,EUR,GBP,INR].",
+    "preferredCurrency runs off tenants list from AuthContext; if tenants aren't loaded yet at first render, currency briefly stays 'USD' before the reset effect fires — negligible UX blip."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy",
+  "seed_data_creation": "Created sandbox payments: ACME-USD-*, BP-INR-*, BP-USD-* via mock provider (succeeded).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Currency-aware New Payment feature verified end-to-end via UI. data-testids used: tenant-selector, tenant-option-{slug}, new-payment-button, new-payment-dialog, payment-provider-select, payment-provider-option-{key}, payment-currency-select, payment-currency-option-{CODE}, payment-amount-input, payment-reference-input, submit-payment-button, details-button-{ref}. Login lands on /superadmin for platform super admin; must navigate to /dashboard/payments explicitly after login.",
+  "rca of the issue": "N/A — no bugs found."
+}

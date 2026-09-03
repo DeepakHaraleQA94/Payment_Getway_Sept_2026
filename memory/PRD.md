@@ -746,3 +746,33 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Tests: test_payment_receipt.py now 14 unit; testing-agent test_new_receipt_features_live.py (9).
   Testing agent iteration_22: backend 100% (9 new + 58 regression), frontend 100%, no issues.
   Additive; financial behavior untouched.
+
+## Currency-Aware Payment UI + Multi-Country Defaults (2026-06, FRONTEND-ONLY, additive)
+- ALREADY EXISTED (not rebuilt): server-side currency capability validation is authoritative —
+  payment_engine.create_payment enforces match_capability/match_plugin_capability (explicit provider)
+  and routing_engine.plan_route (auto); TenantOut already exposes country + default_currency;
+  providers expose supported_currencies/countries via /api/providers/available and per-tenant
+  accounts via /api/providers. NO backend/DB/engine change made.
+- NEW (Payments.jsx only): the New Payment 'Currency' field is now a proper Select
+  (data-testid=payment-currency-select / payment-currency-option-{CODE}) instead of free-text.
+  Options come from the CAPABILITY CONTEXT: per-tenant provider ACCOUNT supported_currencies when set,
+  else plugin defaults; 'auto' shows the union across providers, a specific provider only its own.
+  Default currency: India (tenant.country==='IN') -> INR; otherwise tenant.default_currency (else USD).
+  Effects reset to the tenant default on tenant switch and keep the choice within the provider's
+  supported set (auto-correct). Server remains the source of truth (unsupported -> 400 -> error toast).
+- Test data added (via existing APIs, additive): tenant 'Bharat Pay' (slug bharat-pay, country IN,
+  default_currency INR) with a mock sandbox account supporting INR+USD.
+- Verified (API): Acme(US) mock account rejects INR/AED (400 currency_unsupported), USD/EUR/GBP succeed;
+  Bharat Pay(IN): INR succeeds, USD succeeds, GBP rejected. Testing agent iteration_23: frontend 100%
+  (7/7 — selector present, Acme default USD [EUR,GBP,USD], Bharat Pay default INR [INR,USD], INR+USD
+  succeed, provider-switch option lists + auto-correct, tenant isolation, no regression).
+- No existing financial behavior changed.
+
+## Open item (carried): Resend Delivery Tracking activation
+- Webhook POST /api/webhooks/resend is built + logic-verified (valid->200, invalid->400, idempotent,
+  delivery recorded, no financial change, secret never exposed). It stays disabled until
+  RESEND_WEBHOOK_SECRET (whsec_...) is present in /app/backend/.env. The value placed in the platform
+  'Secrets environment' is NOT read by the preview backend (config.load_dotenv reads backend/.env only).
+  Awaiting the whsec_ value in backend/.env to finish activation.
+- Infra note: pod reset recovered (supervisor + postgres restarted, cloudpay role/db recreated,
+  migrations to head c9d2e3f4a5b6, backend reseeded).

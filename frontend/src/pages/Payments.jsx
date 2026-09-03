@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Plus, Undo2, Download, Info, GitBranch, CheckCircle2, XCircle, Mail, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { api, money, formatApiError, downloadCsv } from "@/lib/api";
@@ -18,12 +18,13 @@ import {
 } from "@/components/ui/select";
 
 export default function Payments() {
-  const { selectedTenantId, hasPermission } = useAuth();
+  const { selectedTenantId, hasPermission, tenants } = useAuth();
   const canCapture = hasPermission("payment.capture");
   const canVoid = hasPermission("payment.void");
   const canResend = hasPermission("payment.create");
   const [payments, setPayments] = useState([]);
   const [providers, setProviders] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
@@ -59,6 +60,13 @@ export default function Payments() {
     if (prov.data.length && !prov.data.some((p) => p.key === form.provider_key)) {
       setForm((f) => ({ ...f, provider_key: prov.data[0].key }));
     }
+    // Per-tenant provider accounts refine the currency selector to what each account can actually
+    // process (account capability overrides plugin default). Best-effort: falls back to plugin
+    // currencies if the caller lacks provider.view.
+    try {
+      const accts = await api.get("/providers", { params: { tenant_id: selectedTenantId } });
+      setAccounts(accts.data || []);
+    } catch { setAccounts([]); }
   }, [selectedTenantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
@@ -77,7 +85,7 @@ export default function Payments() {
       }, { params: { tenant_id: selectedTenantId } });
       toast.success("Payment processed via provider plugin");
       setOpen(false);
-      setForm({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: form.provider_key, environment: form.environment });
+      setForm({ reference: "", amount: "", currency: preferredCurrency(), customer_email: "", provider_key: form.provider_key, environment: form.environment });
       load();
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
@@ -85,6 +93,47 @@ export default function Payments() {
   };
 
   const selectedProvider = providers.find((p) => p.key === form.provider_key);
+  const selectedTenant = tenants?.find((t) => t.id === selectedTenantId);
+
+  // Currency options reflect the CAPABILITY CONTEXT (server stays authoritative). Per-tenant
+  // provider-account currencies (when set) override the plugin defaults; for "auto" we offer the
+  // union across providers, for a specific provider only what it can process in this environment.
+  const effectiveCurrencies = useCallback((key) => {
+    const plugin = providers.find((p) => p.key === key);
+    const acct = accounts.find((a) => a.provider_key === key && a.mode === form.environment);
+    if (acct && Array.isArray(acct.supported_currencies) && acct.supported_currencies.length) {
+      return acct.supported_currencies;
+    }
+    return plugin?.supported_currencies || [];
+  }, [providers, accounts, form.environment]);
+
+  const currencyOptions = useMemo(() => {
+    const keys = form.provider_key === "auto" ? providers.map((p) => p.key) : [form.provider_key];
+    const set = new Set();
+    keys.forEach((k) => effectiveCurrencies(k).forEach((c) => set.add(c)));
+    if (set.size === 0) ["USD", "EUR", "GBP", "INR"].forEach((c) => set.add(c));
+    return Array.from(set).sort();
+  }, [providers, accounts, form.provider_key, form.environment, effectiveCurrencies]);
+
+  // India (IN) defaults to INR; other tenants use their configured default currency (else USD).
+  const preferredCurrency = useCallback(() => (
+    selectedTenant?.country === "IN" ? "INR" : (selectedTenant?.default_currency || "USD")
+  ), [selectedTenant]);
+
+  // Reset the currency to the tenant's preferred default whenever the active tenant changes.
+  useEffect(() => {
+    setForm((f) => ({ ...f, currency: preferredCurrency() }));
+  }, [selectedTenantId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the chosen currency within what the selected provider can actually process.
+  useEffect(() => {
+    setForm((f) => {
+      if (currencyOptions.includes(f.currency)) return f;
+      const pref = preferredCurrency();
+      return { ...f, currency: currencyOptions.includes(pref) ? pref : (currencyOptions[0] || f.currency) };
+    });
+  }, [currencyOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const submitRefund = async () => {
     setBusy(true);
@@ -194,7 +243,14 @@ export default function Payments() {
                   </div>
                   <div className="space-y-2">
                     <Label>Currency</Label>
-                    <Input data-testid="payment-currency-input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} />
+                    <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
+                      <SelectTrigger data-testid="payment-currency-select"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {currencyOptions.map((c) => (
+                          <SelectItem key={c} value={c} data-testid={`payment-currency-option-${c}`}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="space-y-2">
