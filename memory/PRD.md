@@ -625,6 +625,20 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - UI: not added (reported as gap) — backend/API capability delivered; existing Payments screen left
   unchanged per the no-redesign rule.
 
+## Payment Capture & Void Operator UI (2026-06, FRONTEND-ONLY)
+- Added Capture/Void actions to the EXISTING Payments page (frontend/src/pages/Payments.jsx only) on
+  the EXISTING backend contract — no backend/DB/migration changes.
+- Capture: shown only for status=='authorized' + hasPermission('payment.capture'); confirm dialog with
+  amount (full default, editable for partial); POST /api/payments/{id}/capture {amount_minor?,
+  idempotency_key}. Void: shown only for status=='authorized' + hasPermission('payment.void'); confirm
+  dialog with optional reason; POST /api/payments/{id}/void {reason?, idempotency_key}. Both disable
+  buttons while busy (duplicate-click protection), toast success/error, and refresh the list.
+- Permissions reused: payment.capture, payment.void. Tenant isolation via existing selector + server
+  auth. State gating mirrors backend (only authorized payments show the actions).
+- Verified live (screenshot): authorized rows show Details/Capture/Void; non-authorized show only
+  Details/Refund; capture executed → 'captured'. Backend regression test_capture_void +
+  test_financial_integrity = 44 pass.
+
 ## Line-Level Reconciliation & Matching Engine (2026-06, REPORT-ONLY, additive)
 - New provider-agnostic engine that matches internal payments against provider records (uploaded
   transaction-lines CSV AND/OR provider-status pull) and reports discrepancies. READ-ONLY: never

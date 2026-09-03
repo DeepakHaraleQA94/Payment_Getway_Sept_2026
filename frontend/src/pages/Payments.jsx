@@ -18,12 +18,18 @@ import {
 } from "@/components/ui/select";
 
 export default function Payments() {
-  const { selectedTenantId } = useAuth();
+  const { selectedTenantId, hasPermission } = useAuth();
+  const canCapture = hasPermission("payment.capture");
+  const canVoid = hasPermission("payment.void");
   const [payments, setPayments] = useState([]);
   const [providers, setProviders] = useState([]);
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
+  const [captureFor, setCaptureFor] = useState(null);
+  const [captureAmount, setCaptureAmount] = useState("");
+  const [voidFor, setVoidFor] = useState(null);
+  const [voidReason, setVoidReason] = useState("");
   const [form, setForm] = useState({ reference: "", amount: "", currency: "USD", customer_email: "", provider_key: "mock", environment: "sandbox" });
   const [refundAmount, setRefundAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -77,6 +83,36 @@ export default function Payments() {
       toast.success("Refund processed");
       setRefundFor(null);
       setRefundAmount("");
+      load();
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    } finally { setBusy(false); }
+  };
+
+  const submitCapture = async () => {
+    setBusy(true);
+    try {
+      const body = { idempotency_key: `cap-${Date.now()}` };
+      const full = captureFor.amount_minor;
+      const minor = Math.round(parseFloat(captureAmount) * 100);
+      if (!Number.isNaN(minor) && minor !== full) body.amount_minor = minor; // partial capture
+      const { data } = await api.post(`/payments/${captureFor.id}/capture`, body);
+      toast.success(`Payment captured — status ${data.status}`);
+      setCaptureFor(null); setCaptureAmount("");
+      load();
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    } finally { setBusy(false); }
+  };
+
+  const submitVoid = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/payments/${voidFor.id}/void`, {
+        reason: voidReason || null, idempotency_key: `void-${Date.now()}`,
+      });
+      toast.success(`Payment voided — status ${data.status}`);
+      setVoidFor(null); setVoidReason("");
       load();
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
@@ -195,6 +231,18 @@ export default function Payments() {
                         onClick={() => setDetailFor(p)}>
                         <Info className="h-3.5 w-3.5 mr-1" /> Details
                       </Button>
+                      {p.status === "authorized" && canCapture && (
+                        <Button variant="ghost" size="sm" data-testid={`capture-button-${p.reference}`}
+                          onClick={() => { setCaptureFor(p); setCaptureAmount((p.amount_minor / 100).toString()); }}>
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Capture
+                        </Button>
+                      )}
+                      {p.status === "authorized" && canVoid && (
+                        <Button variant="ghost" size="sm" data-testid={`void-button-${p.reference}`}
+                          onClick={() => { setVoidFor(p); setVoidReason(""); }}>
+                          <XCircle className="h-3.5 w-3.5 mr-1" /> Void
+                        </Button>
+                      )}
                       {["succeeded", "captured", "partially_refunded"].includes(p.status) && (
                         <Button variant="ghost" size="sm" data-testid={`refund-button-${p.reference}`}
                           onClick={() => { setRefundFor(p); setRefundAmount((p.amount_minor / 100).toString()); }}>
@@ -276,6 +324,48 @@ export default function Payments() {
           </div>
           <DialogFooter>
             <Button data-testid="submit-refund-button" onClick={submitRefund} disabled={busy}>Process Refund</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!captureFor} onOpenChange={(v) => { if (!v && !busy) setCaptureFor(null); }}>
+        <DialogContent data-testid="capture-dialog">
+          <DialogHeader>
+            <DialogTitle>Capture {captureFor?.reference}</DialogTitle>
+            <DialogDescription>Capture this authorized payment. Full capture by default; edit the amount for a partial capture.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Capture amount</Label>
+            <Input data-testid="capture-amount-input" type="number" step="0.01" value={captureAmount}
+              onChange={(e) => setCaptureAmount(e.target.value)} />
+            <p className="text-xs text-muted-foreground">Authorized: {captureFor && money(captureFor.amount_minor, captureFor.currency)}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCaptureFor(null)} disabled={busy} data-testid="capture-cancel">Cancel</Button>
+            <Button data-testid="submit-capture-button" onClick={submitCapture} disabled={busy || !captureAmount}>
+              {busy ? "Capturing…" : "Capture payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!voidFor} onOpenChange={(v) => { if (!v && !busy) setVoidFor(null); }}>
+        <DialogContent data-testid="void-dialog">
+          <DialogHeader>
+            <DialogTitle>Void {voidFor?.reference}</DialogTitle>
+            <DialogDescription>Cancel this authorized payment before capture. This releases the authorization and cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Reason (optional)</Label>
+            <Input data-testid="void-reason-input" value={voidReason} onChange={(e) => setVoidReason(e.target.value)}
+              placeholder="e.g. customer cancelled order" />
+            <p className="text-xs text-muted-foreground">Amount: {voidFor && money(voidFor.amount_minor, voidFor.currency)}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVoidFor(null)} disabled={busy} data-testid="void-cancel">Cancel</Button>
+            <Button variant="destructive" data-testid="submit-void-button" onClick={submitVoid} disabled={busy}>
+              {busy ? "Voiding…" : "Void payment"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
