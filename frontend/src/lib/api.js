@@ -21,12 +21,39 @@ export function formatApiError(detail) {
   return String(detail);
 }
 
+// Minor-unit precision per ISO-4217 currency (default 2). Zero-decimal (e.g. JPY) and
+// three-decimal (e.g. KWD) currencies are handled so amounts are never off by 100.
+export const CURRENCY_DECIMALS = {
+  JPY: 0, KRW: 0, VND: 0, CLP: 0, XOF: 0, XAF: 0, PYG: 0,
+  BHD: 3, KWD: 3, OMR: 3, TND: 3,
+};
+export function currencyDecimals(currency = "USD") {
+  const d = CURRENCY_DECIMALS[(currency || "").toUpperCase()];
+  return d === undefined ? 2 : d;
+}
+
+export function toMinorUnits(amount, currency = "USD") {
+  const d = currencyDecimals(currency);
+  return Math.round(parseFloat(amount) * Math.pow(10, d));
+}
+
+export function currencySymbol(currency = "USD") {
+  try {
+    const parts = new Intl.NumberFormat("en-US", { style: "currency", currency }).formatToParts(0);
+    const sym = parts.find((p) => p.type === "currency");
+    return sym ? sym.value : currency;
+  } catch {
+    return currency;
+  }
+}
+
 export function money(minor, currency = "USD") {
-  const value = (minor || 0) / 100;
+  const d = currencyDecimals(currency);
+  const value = (minor || 0) / Math.pow(10, d);
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(value);
   } catch {
-    return `${currency} ${value.toFixed(2)}`;
+    return `${currency} ${value.toFixed(d)}`;
   }
 }
 

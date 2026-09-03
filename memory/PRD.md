@@ -791,3 +791,22 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Verified via UI screenshots: no default (placeholder), submit gated until chosen, full named list,
   and explicit INR selection on Bharat Pay processed a ₹1,500 INR payment (succeeded) next to USD rows.
 - Only file changed: frontend/src/pages/Payments.jsx. No existing financial behavior changed.
+
+## Currency Amount Formatting + Zero-Decimal + Provider-Aware Hinting (2026-06, FRONTEND-ONLY)
+- Three additive currency-safety UI improvements (no backend/engine/DB change; no-default decision kept):
+  1. Amount Formatting: the Amount field shows the selected currency's symbol (Intl formatToParts) as a
+     prefix and uses the correct step/precision per currency. Symbol only shows once a currency is chosen.
+  2. Zero-Decimal Handling: new shared helpers in lib/api.js — currencyDecimals (JPY/KRW/VND/CLP/XOF/
+     XAF/PYG=0; BHD/KWD/OMR/TND=3; default 2), toMinorUnits(amount,currency)=round(amount*10^d), and
+     money() now divides by 10^d (identical for 2-decimal currencies, correct for JPY etc.). New Payment
+     computes amount_minor via toMinorUnits so ¥1500 -> 1500 (not 150000). Verified: JPY payment stored
+     amount_minor=1500, succeeded.
+  3. Provider-Aware Hinting: currency options the currently selected provider/account cannot process are
+     disabled + annotated "· not supported" (uses per-tenant account currencies when set, else plugin
+     capability; for "auto", supported if any provider qualifies). If a selected currency becomes
+     unsupported after a provider/environment change it is cleared (never auto-selects). Server-side
+     match_capability/plan_route remain the final authority (unchanged).
+- Files changed: frontend/src/lib/api.js, frontend/src/pages/Payments.jsx. No core payment/engine change.
+- Verified: UI (¥ symbol, step=1 for JPY, hinting map INR/JPY/USD enabled + others greyed on Bharat Pay
+  mock), API (¥1500->1500 succeeded; JPY on acme rejected 400), backend regression 58/58 pass.
+- Test data: Bharat Pay mock sandbox account now also lists JPY (additive, for zero-decimal testing).

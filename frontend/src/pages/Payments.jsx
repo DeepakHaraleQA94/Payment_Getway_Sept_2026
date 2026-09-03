@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Plus, Undo2, Download, Info, GitBranch, CheckCircle2, XCircle, Mail, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { api, money, formatApiError, downloadCsv } from "@/lib/api";
+import { api, money, formatApiError, downloadCsv, toMinorUnits, currencySymbol, currencyDecimals } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ export default function Payments() {
   const canResend = hasPermission("payment.create");
   const [payments, setPayments] = useState([]);
   const [providers, setProviders] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
@@ -68,6 +69,13 @@ export default function Payments() {
     if (prov.data.length && !prov.data.some((p) => p.key === form.provider_key)) {
       setForm((f) => ({ ...f, provider_key: prov.data[0].key }));
     }
+    // Best-effort per-tenant provider accounts to power provider-aware currency hinting (which
+    // currencies the selected provider/account can actually process). Falls back to plugin
+    // capability if the caller lacks provider.view. Never blocks the payments list.
+    try {
+      const accts = await api.get("/providers", { params: { tenant_id: selectedTenantId } });
+      setAccounts(accts.data || []);
+    } catch { setAccounts([]); }
   }, [selectedTenantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
@@ -77,7 +85,7 @@ export default function Payments() {
     try {
       await api.post("/payments", {
         reference: form.reference || `ORD-${Date.now()}`,
-        amount_minor: Math.round(parseFloat(form.amount) * 100),
+        amount_minor: toMinorUnits(form.amount, form.currency),
         currency: form.currency,
         provider_key: form.provider_key,
         environment: form.environment,
@@ -102,9 +110,34 @@ export default function Payments() {
     const set = new Set();
     providers.forEach((p) => (p.supported_currencies || []).forEach((c) => set.add(c)));
     // Baseline so the selector is never empty before discovery loads.
-    ["INR", "USD", "GBP", "EUR", "AUD", "CAD", "SGD"].forEach((c) => set.add(c));
+    ["INR", "USD", "GBP", "EUR", "AUD", "CAD", "SGD", "JPY"].forEach((c) => set.add(c));
     return Array.from(set).sort();
   }, [providers]);
+
+  // Effective currencies a provider can process = its account currencies (when configured) else the
+  // plugin's declared capability. Used only for UI hinting; the server stays authoritative.
+  const effectiveCurrencies = useCallback((key) => {
+    const plugin = providers.find((p) => p.key === key);
+    const acct = accounts.find((a) => a.provider_key === key && a.mode === form.environment);
+    if (acct && Array.isArray(acct.supported_currencies) && acct.supported_currencies.length) {
+      return acct.supported_currencies;
+    }
+    return plugin?.supported_currencies || [];
+  }, [providers, accounts, form.environment]);
+
+  // Is a currency processable by the CURRENT selection? For "auto", any provider suffices.
+  const isCurrencySupported = useCallback((code) => {
+    if (form.provider_key === "auto") {
+      return providers.some((p) => effectiveCurrencies(p.key).includes(code));
+    }
+    return effectiveCurrencies(form.provider_key).includes(code);
+  }, [providers, effectiveCurrencies, form.provider_key]);
+
+  // If the chosen currency stops being processable after a provider/environment change, clear it so
+  // the operator must pick a supported one (never auto-selects a currency).
+  useEffect(() => {
+    setForm((f) => (f.currency && !isCurrencySupported(f.currency) ? { ...f, currency: "" } : f));
+  }, [isCurrencySupported]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const submitRefund = async () => {
@@ -211,7 +244,17 @@ export default function Payments() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Amount</Label>
-                    <Input data-testid="payment-amount-input" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="100.00" />
+                    <div className="relative">
+                      {form.currency && (
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-mono"
+                          data-testid="payment-amount-symbol">{currencySymbol(form.currency)}</span>
+                      )}
+                      <Input data-testid="payment-amount-input" type="number"
+                        step={currencyDecimals(form.currency) === 0 ? "1" : "0.01"}
+                        className={form.currency ? "pl-8" : ""}
+                        value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                        placeholder={currencyDecimals(form.currency) === 0 ? "100" : "100.00"} />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Currency</Label>
@@ -220,9 +263,17 @@ export default function Payments() {
                         <SelectValue placeholder="Select currency" />
                       </SelectTrigger>
                       <SelectContent>
-                        {currencyOptions.map((c) => (
-                          <SelectItem key={c} value={c} data-testid={`payment-currency-option-${c}`}>{currencyLabel(c)}</SelectItem>
-                        ))}
+                        {currencyOptions.map((c) => {
+                          const supported = isCurrencySupported(c);
+                          return (
+                            <SelectItem key={c} value={c} disabled={!supported}
+                              data-testid={`payment-currency-option-${c}`}>
+                              <span className={supported ? "" : "opacity-50"}>
+                                {currencyLabel(c)}{!supported && " · not supported"}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
