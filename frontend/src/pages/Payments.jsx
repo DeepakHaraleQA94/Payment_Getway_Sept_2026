@@ -25,6 +25,20 @@ const CURRENCY_NAMES = {
 };
 const currencyLabel = (c) => (CURRENCY_NAMES[c] ? `${c} — ${CURRENCY_NAMES[c]}` : c);
 
+// Display-only thousands grouping for the amount field. Keeps the raw numeric string exact for the
+// backend (no floating-point math here); only formats what the operator sees. `decimals`=0 hides the
+// fractional part entirely (zero-decimal currencies like JPY).
+const groupAmount = (raw, decimals) => {
+  if (raw === "" || raw == null) return "";
+  const s = String(raw);
+  const [intPart, ...rest] = s.split(".");
+  const grouped = (intPart || "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  if (decimals === 0) return grouped;
+  if (!s.includes(".")) return grouped;
+  return `${grouped}.${(rest.join("") || "").slice(0, decimals)}`;
+};
+
+
 
 export default function Payments() {
   const { selectedTenantId, hasPermission } = useAuth();
@@ -133,11 +147,24 @@ export default function Payments() {
     return effectiveCurrencies(form.provider_key).includes(code);
   }, [providers, effectiveCurrencies, form.provider_key]);
 
-  // If the chosen currency stops being processable after a provider/environment change, clear it so
-  // the operator must pick a supported one (never auto-selects a currency).
-  useEffect(() => {
-    setForm((f) => (f.currency && !isCurrencySupported(f.currency) ? { ...f, currency: "" } : f));
-  }, [isCurrencySupported]); // eslint-disable-line react-hooks/exhaustive-deps
+  const providerLabel = form.provider_key === "auto"
+    ? "the selected providers" : (selectedProvider?.display_name || form.provider_key);
+  // UX hint only (server stays authoritative): true when the chosen currency can't be processed
+  // by the current provider/account selection (e.g. after switching providers).
+  const currencyUnsupported = !!form.currency && !isCurrencySupported(form.currency);
+
+  // Informational: payment methods advertised for the current provider/currency context.
+  const methodHint = useMemo(() => {
+    if (!form.currency) return [];
+    const keys = form.provider_key === "auto" ? providers.map((p) => p.key) : [form.provider_key];
+    const set = new Set();
+    keys.forEach((k) => {
+      if (effectiveCurrencies(k).includes(form.currency)) {
+        (providers.find((p) => p.key === k)?.payment_methods || []).forEach((m) => set.add(m));
+      }
+    });
+    return Array.from(set).sort();
+  }, [providers, form.provider_key, form.currency, effectiveCurrencies]);
 
 
   const submitRefund = async () => {
@@ -249,10 +276,18 @@ export default function Payments() {
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-mono"
                           data-testid="payment-amount-symbol">{currencySymbol(form.currency)}</span>
                       )}
-                      <Input data-testid="payment-amount-input" type="number"
-                        step={currencyDecimals(form.currency) === 0 ? "1" : "0.01"}
+                      <Input data-testid="payment-amount-input" type="text" inputMode="decimal"
                         className={form.currency ? "pl-8" : ""}
-                        value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                        value={groupAmount(form.amount, currencyDecimals(form.currency))}
+                        onChange={(e) => {
+                          const d = currencyDecimals(form.currency);
+                          let raw = e.target.value.replace(/,/g, "").replace(/[^0-9.]/g, "");
+                          const dot = raw.indexOf(".");
+                          if (dot !== -1) raw = raw.slice(0, dot + 1) + raw.slice(dot + 1).replace(/\./g, "");
+                          if (d === 0) raw = raw.replace(/\./g, "");
+                          else if (raw.includes(".")) { const [i, f = ""] = raw.split("."); raw = `${i}.${f.slice(0, d)}`; }
+                          setForm({ ...form, amount: raw });
+                        }}
                         placeholder={currencyDecimals(form.currency) === 0 ? "100" : "100.00"} />
                     </div>
                   </div>
@@ -276,8 +311,18 @@ export default function Payments() {
                         })}
                       </SelectContent>
                     </Select>
+                    {currencyUnsupported && (
+                      <p className="text-xs text-destructive" data-testid="currency-unsupported-note">
+                        Not supported by {providerLabel}
+                      </p>
+                    )}
                   </div>
                 </div>
+                {form.currency && methodHint.length > 0 && (
+                  <p className="text-xs text-muted-foreground" data-testid="payment-method-hint">
+                    Supported methods for {form.currency} via {providerLabel}: {methodHint.join(", ")}
+                  </p>
+                )}
                 <div className="space-y-2">
                   <Label>Customer email</Label>
                   <Input data-testid="payment-email-input" value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} placeholder="buyer@example.com" />
@@ -285,7 +330,7 @@ export default function Payments() {
                 <p className="text-xs font-mono text-muted-foreground">Tip: amounts ending in .13 simulate a sandbox decline.</p>
               </div>
               <DialogFooter>
-                <Button data-testid="submit-payment-button" onClick={createPayment} disabled={busy || !form.amount || !form.currency}>Process</Button>
+                <Button data-testid="submit-payment-button" onClick={createPayment} disabled={busy || !form.amount || !form.currency || currencyUnsupported}>Process</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

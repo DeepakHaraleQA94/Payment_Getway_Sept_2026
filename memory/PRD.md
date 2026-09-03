@@ -810,3 +810,21 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Verified: UI (¥ symbol, step=1 for JPY, hinting map INR/JPY/USD enabled + others greyed on Bharat Pay
   mock), API (¥1500->1500 succeeded; JPY on acme rejected 400), backend regression 58/58 pass.
 - Test data: Bharat Pay mock sandbox account now also lists JPY (additive, for zero-decimal testing).
+
+## Inline Currency Note + Amount Grouping + Country→Method Hint (2026-06, FRONTEND-ONLY)
+- Three additive UX hints in Payments.jsx (only file changed this task; no backend/engine/DB change;
+  no-default-currency kept; server capability remains authoritative):
+  1. Inline Currency Support Note: replaced the prior auto-clear behaviour with a red note
+     "Not supported by {provider}" (data-testid=currency-unsupported-note) shown when the chosen
+     currency isn't processable by the current provider/account; Process is disabled while unsupported.
+     Verified: select JPY (mock) -> switch to Stripe -> note appears, submit disabled.
+  2. Amount Grouping: amount field is now a grouped text input (data-testid=payment-amount-input)
+     showing thousands separators as typed (module-level groupAmount, display-only). The raw numeric
+     string is stored in form.amount and sent via toMinorUnits unchanged (no float math introduced),
+     honouring per-currency precision incl. zero-decimal. Verified: typed 1,234,567.89 -> stored
+     $1,234,567.89 (amount_minor 123456789 exact); JPY 1,500,000 grouped, ¥ symbol, no decimals.
+  3. Country->Payment Method Hint: informational line (data-testid=payment-method-hint) listing the
+     payment_methods advertised for the current provider/currency context (union for "auto"). Verified:
+     "Supported methods for JPY via Mock Sandbox Provider: bank, card, wallet".
+- Server-side match_capability/plan_route/routing/execution unchanged and authoritative. Backend
+  financial regression unchanged (58/58 from prior run; no backend code touched this task).
