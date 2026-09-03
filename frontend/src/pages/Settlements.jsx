@@ -26,6 +26,7 @@ export default function Settlements() {
   const [preview, setPreview] = useState(null); // { items, created_count, duplicate_count, error_count }
   const [pendingFile, setPendingFile] = useState(null);
   const [imports, setImports] = useState([]);
+  const [detail, setDetail] = useState(null);
   const fileInputRef = useRef(null);
   const tenant = tenants.find((t) => t.id === selectedTenantId);
 
@@ -107,6 +108,17 @@ export default function Settlements() {
   };
 
   const closePreview = () => { setPreview(null); setPendingFile(null); };
+
+  const openDetail = async (settlement) => {
+    setDetail({ loading: true });
+    try {
+      const { data } = await api.get(`/settlements/${settlement.id}`, { params: { tenant_id: selectedTenantId } });
+      setDetail(data);
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+      setDetail(null);
+    }
+  };
 
   return (
     <div data-testid="settlements-page">
@@ -207,6 +219,7 @@ export default function Settlements() {
                   <TableHead>Txns</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -219,6 +232,9 @@ export default function Settlements() {
                     <TableCell className="font-mono text-xs">{s.txn_count}</TableCell>
                     <TableCell><StatusBadge status={s.status} /></TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{new Date(s.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="outline" size="sm" data-testid={`settlement-view-${s.reference}`} onClick={() => openDetail(s)}>View</Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -258,6 +274,79 @@ export default function Settlements() {
           </div>
         </Panel>
       )}
+
+      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="settlement-detail-dialog">
+          <DialogHeader>
+            <DialogTitle>Settlement detail</DialogTitle>
+            <DialogDescription>Read-only view of this settlement and related reconciliation context.</DialogDescription>
+          </DialogHeader>
+          {detail?.loading ? (
+            <EmptyState message="Loading settlement…" testid="settlement-detail-loading" />
+          ) : detail ? (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                {[
+                  ["Reference", detail.reference],
+                  ["Provider settlement ref", detail.provider_settlement_ref || "—"],
+                  ["Tenant", detail.tenant_name || detail.tenant_id],
+                  ["Currency", detail.currency],
+                  ["Gross", money(detail.gross_minor, detail.currency)],
+                  ["Fees", money(detail.fees_minor, detail.currency)],
+                  ["Net", money(detail.net_minor, detail.currency)],
+                  ["Transactions", detail.txn_count],
+                  ["Status", detail.status],
+                  ["Import source", detail.import_source],
+                  ["Created", new Date(detail.created_at).toLocaleString()],
+                  ["Settled", detail.settled_at ? new Date(detail.settled_at).toLocaleString() : "—"],
+                  ["Created by", detail.created_by_email || "—"],
+                  ["Settlement ID", detail.id],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex flex-col">
+                    <span className="text-xs text-muted-foreground">{k}</span>
+                    <span className="font-mono text-xs break-all" data-testid={`settlement-detail-${k.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="text-xs font-medium mb-1">Reconciliation context</div>
+                <p className="text-xs text-muted-foreground mb-2">{detail.reconciliation_context?.note}</p>
+                {detail.reconciliation_context?.runs?.length ? (
+                  <div className="border border-border rounded-md overflow-hidden max-h-56 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>When</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead className="text-right">Lines</TableHead>
+                          <TableHead className="text-right">Matched</TableHead>
+                          <TableHead className="text-right">Discrepancies</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detail.reconciliation_context.runs.map((r) => (
+                          <TableRow key={r.id} data-testid="settlement-detail-recon-row">
+                            <TableCell className="font-mono text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs">{r.source}</TableCell>
+                            <TableCell className="text-right font-mono">{r.total_lines}</TableCell>
+                            <TableCell className="text-right font-mono text-emerald-400">{r.matched_count}</TableCell>
+                            <TableCell className="text-right font-mono text-red-400">{r.discrepancy_count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground" data-testid="settlement-detail-recon-empty">No reconciliation runs for this tenant/currency.</p>
+                )}
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetail(null)} data-testid="settlement-detail-close">Back to list</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -171,3 +171,67 @@ async def report_payments(tenant_id: str | None = None, db: AsyncSession = Depen
 async def fx_convert(amount_minor: int, base: str, quote: str, db: AsyncSession = Depends(get_db),
                      user=Depends(get_current_user)):
     return await fx_service.convert(db, amount_minor=amount_minor, base=base.upper(), quote=quote.upper())
+
+
+@router.get("/settlements/{settlement_id}")
+async def settlement_detail(settlement_id: str, tenant_id: str | None = None,
+                            db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Read-only drill-down for a single settlement. Tenant-isolated (cross-tenant -> 404).
+
+    Surfaces only data that exists in the current schema. Reconciliation info is best-effort context
+    for the same tenant + currency (no direct settlement<->reconciliation relationship exists) and is
+    strictly read-only. Never mutates settlements, ledger, balances or reconciliation.
+    """
+    from app.models.finance import ReconciliationRun
+    from app.models.iam import User
+    from app.models.tenant import Tenant
+
+    settlement = await db.get(Settlement, settlement_id)
+    if not settlement or (not user.is_superadmin and settlement.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    tid = resolve_tenant_id(user, tenant_id)
+    if not user.is_superadmin and tid is not None and settlement.tenant_id != tid:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+
+    tenant = await db.get(Tenant, settlement.tenant_id)
+    created_by_email = None
+    if settlement.created_by:
+        creator = await db.get(User, settlement.created_by)
+        created_by_email = creator.email if creator else None
+
+    # Import source is safely derived: an imported settlement carries a provider settlement ref.
+    imported = bool(settlement.provider_settlement_ref)
+
+    # Read-only reconciliation CONTEXT for the same tenant + currency (not a direct DB relationship).
+    rc = (await db.execute(
+        select(ReconciliationRun).where(
+            ReconciliationRun.tenant_id == settlement.tenant_id,
+            ReconciliationRun.currency == settlement.currency)
+        .order_by(ReconciliationRun.created_at.desc()).limit(10))).scalars().all()
+    recon_runs = [{
+        "id": str(r.id), "source": r.source, "total_lines": r.total_lines,
+        "matched_count": r.matched_count, "discrepancy_count": r.discrepancy_count,
+        "summary": r.summary, "created_at": r.created_at.isoformat(),
+    } for r in rc]
+
+    return {
+        "id": str(settlement.id),
+        "reference": settlement.reference,
+        "provider_settlement_ref": settlement.provider_settlement_ref,
+        "tenant_id": str(settlement.tenant_id),
+        "tenant_name": tenant.name if tenant else None,
+        "currency": settlement.currency,
+        "gross_minor": settlement.gross_minor,
+        "fees_minor": settlement.fees_minor,
+        "net_minor": settlement.net_minor,
+        "txn_count": settlement.txn_count,
+        "status": settlement.status,
+        "created_at": settlement.created_at.isoformat(),
+        "settled_at": settlement.settled_at.isoformat() if settlement.settled_at else None,
+        "created_by_email": created_by_email,
+        "import_source": "import" if imported else "generated",
+        "reconciliation_context": {
+            "note": "Reconciliation runs for this tenant and currency (not directly linked to this settlement).",
+            "runs": recon_runs,
+        },
+    }

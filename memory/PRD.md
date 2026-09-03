@@ -639,6 +639,24 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   Details/Refund; capture executed → 'captured'. Backend regression test_capture_void +
   test_financial_integrity = 44 pass.
 
+## Settlement Detail / Drill-Down (2026-06, READ-ONLY, additive)
+- New read-only per-settlement drill-down. Backend: GET /api/settlements/{id} (finance.py) — auth +
+  strict tenant ownership (cross-tenant/unknown -> 404), returns all existing Settlement columns +
+  resolved created_by email + tenant name + derived import_source (import if provider_settlement_ref
+  else generated) + reconciliation CONTEXT (tenant+currency recon runs, clearly labeled "not directly
+  linked" — no invented relationship). No secrets exposed. No new permission (mirrors list's
+  auth+tenant model). No DB migration (read-only over existing columns/tables).
+- Frontend: Settlements.jsx — added a per-row "View" button + a detail Dialog (all fields + recon
+  context table + Back to list). Additive; existing Settlements page/import/history untouched.
+- Login investigation: root cause is the SANDBOX pod resetting PostgreSQL (wipes cloudpay DB ->
+  backend 500/unreachable -> frontend formatApiError shows generic "Something went wrong"). Confirmed
+  live (health 000, superadmin row gone), recovered by recreating DB/role + migrations. finance@ login
+  200, old admin@cloudpay.io 401 (retired, absent). NOT a code/auth bug; no security weakened.
+- Tests: tests/test_settlement_detail.py (10) — authorized view, no-secrets, 404 unknown,
+  unauthenticated 401/403, cross-tenant 404, read-only no-ledger-mutation, valid/invalid login,
+  retired-admin non-auth, token+me. Regression (settlement_detail + reconciliation + capture_void +
+  financial_integrity + payment_state + provider_architecture + capability_routing) = 119 pass.
+
 ## Line-Level Reconciliation & Matching Engine (2026-06, REPORT-ONLY, additive)
 - New provider-agnostic engine that matches internal payments against provider records (uploaded
   transaction-lines CSV AND/OR provider-status pull) and reports discrepancies. READ-ONLY: never
