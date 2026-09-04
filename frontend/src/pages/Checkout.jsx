@@ -11,12 +11,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 export default function Checkout() {
   const { selectedTenantId, tenants, loadTenants } = useAuth();
   const [sessions, setSessions] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ amount: "", description: "", customer_email: "" });
+  const [form, setForm] = useState({ amount: "", description: "", customer_email: "", method: "card" });
   const [createdUrl, setCreatedUrl] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -65,14 +68,16 @@ export default function Checkout() {
   const create = async () => {
     setBusy(true);
     try {
+      const isUpi = form.method === "demo_upi";
       const { data } = await api.post("/checkout/sessions", {
         amount_minor: Math.round(parseFloat(form.amount) * 100),
-        currency: tenant?.default_currency || "USD",
+        currency: isUpi ? "INR" : (tenant?.default_currency || "USD"),
+        provider_key: isUpi ? "demo_upi" : "mock",
         description: form.description || null,
         customer_email: form.customer_email || null,
       }, { params: { tenant_id: selectedTenantId } });
       setCreatedUrl(checkoutUrl(data.token));
-      setForm({ amount: "", description: "", customer_email: "" });
+      setForm({ amount: "", description: "", customer_email: "", method: "card" });
       load();
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
     finally { setBusy(false); }
@@ -104,8 +109,20 @@ export default function Checkout() {
               </DialogHeader>
               {!createdUrl ? (
                 <div className="space-y-4 py-2">
+                  <div className="space-y-2"><Label>Payment method</Label>
+                    <Select value={form.method} onValueChange={(v) => setForm({ ...form, method: v })}>
+                      <SelectTrigger data-testid="checkout-method-select"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="card" data-testid="checkout-method-card">Card (Mock sandbox)</SelectItem>
+                        <SelectItem value="demo_upi" data-testid="checkout-method-demo_upi">Demo UPI (INR sandbox)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {form.method === "demo_upi" && (
+                      <p className="text-xs text-muted-foreground">Creates an INR UPI checkout with app choices (PhonePe/GPay/Paytm) and a scannable QR.</p>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2"><Label>Amount ({tenant?.default_currency || "USD"})</Label>
+                    <div className="space-y-2"><Label>Amount ({form.method === "demo_upi" ? "INR" : (tenant?.default_currency || "USD")})</Label>
                       <Input data-testid="checkout-amount-input" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="25.00" /></div>
                     <div className="space-y-2"><Label>Customer email</Label>
                       <Input data-testid="checkout-email-input" value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} /></div>

@@ -378,6 +378,7 @@ class CheckoutCreate(BaseModel):
     reference: str = Field(default="", max_length=64)
     amount_minor: int = Field(gt=0)
     currency: str = "USD"
+    provider_key: str = "mock"
     description: str | None = None
     customer_email: EmailStr | None = None
     success_url: str | None = None
@@ -389,6 +390,7 @@ class CheckoutOut(ORMBase):
     reference: str
     amount_minor: int
     currency: str
+    provider_key: str
     description: str | None
     customer_email: str | None
     status: str
@@ -398,6 +400,13 @@ class CheckoutOut(ORMBase):
 class CheckoutPay(BaseModel):
     customer_email: EmailStr | None = None
     card_number: str | None = None  # sandbox only; never stored
+
+
+class DemoUpiPay(BaseModel):
+    """Customer-facing DEMO UPI checkout action (sandbox demo_upi provider only)."""
+    customer_email: EmailStr | None = None
+    upi_app: str | None = None          # phonepe | gpay | paytm | bhim | other | qr (demo UI choice)
+    outcome: str = "success"            # success | failed | pending (simulated walkthrough)
 
 
 

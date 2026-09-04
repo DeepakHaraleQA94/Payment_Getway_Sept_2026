@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 28 — Currency Catalog API, Demo UPI checkout (session+public+PIN+QR), and Provider Health Badge. Backend: 12/12 pytest passed. Frontend: full happy paths work; PhonePe PIN success + QR success both mark the session paid and show a success screen; simulate-fail returns to a failed result with retry; provider health badge renders 'Healthy' on the mock provider card and re-runs on click. One minor UI inconsistency found: the demo-upi 'upi-result-paid' data-testid is effectively unreachable because the parent CheckoutPage switches to its own checkout-success view synchronously when onPaid() fires, unmounting DemoUpiCheckout before its result stage renders.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "CheckoutPage / DemoUpiCheckout",
+        "issue": "After a successful demo-UPI authorization (PIN or QR), the DemoUpiCheckout result stage (data-testid=upi-result-paid) never renders because onPaid() sets parent paid=true first, causing the parent to render the generic checkout-success block and unmount DemoUpiCheckout. Users still see 'Payment successful' but the spec's upi-result-paid testid is not reachable in practice.",
+        "selector": "[data-testid=\"upi-result-paid\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_demo_upi_currencies.py",
+    "/app/test_reports/pytest/iter28.xml"
+  ],
+  "action_items": [
+    "Optional: in DemoUpiCheckout.authorize(), set stage='result' BEFORE calling onPaid?.() (or delay onPaid via setTimeout) so upi-result-paid becomes visible; alternatively keep DemoUpiCheckout mounted for demo_upi sessions even when parent paid=true."
+  ],
+  "critical_code_review_comments": [
+    "checkout.py public_demo_upi_pay correctly enforces provider_key==demo_upi and short-circuits non-success outcomes with {status:'simulated'} (no payment recorded) — matches design intent.",
+    "currency_catalog.py exposes 52 ISO-4217 entries with (code,name,decimals,symbol); GET /api/currencies is auth-gated via get_current_user (401 without token confirmed).",
+    "Providers.jsx health badge re-check on click works; only one configured provider present in the test tenant so single-badge coverage.",
+    "Payments.jsx currencyLabel already produces 'CODE — Name' from the catalog (line 107); UI verified builds options from the catalog."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_demo_upi_currencies.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "~95%"},
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (super admin)",
+  "seed_data_creation": "Test-only checkout sessions with reference prefix TEST_upi_* / TEST_card_* / TEST_upiqr_* created via API against the first non-platform tenant.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_iter28_demo_upi_currencies.py (run with: pytest ... -o addopts=''). The demo_upi flow is public and does not require auth on /api/public/checkout/{token}/upi and /upi/pay. Provider health for demo_upi and mock both return 200. If retesting upi-result-paid visibility, note the current implementation unmounts DemoUpiCheckout on success — see action item.",
+  "rca of the issue": "In CheckoutPage.jsx DemoUpiCheckout.authorize(), the ordering is: setResult('paid') -> onPaid?.() -> (finally) setStage('result'). onPaid immediately calls parent setPaid(true), which in the parent's render (line 277) short-circuits to <checkout-success> and unmounts DemoUpiCheckout — so its own result stage (with data-testid='upi-result-paid') never gets a chance to paint. Fix: either move onPaid() into a setTimeout after stage transitions, or don't collapse to parent's paid view when session.provider_key === 'demo_upi'."
+}

@@ -17,13 +17,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
-// Readable names for currency codes (display only; server capability stays authoritative).
-const CURRENCY_NAMES = {
+// Fallback readable names (only used before the ISO-4217 catalog loads from /api/currencies).
+const CURRENCY_NAMES_FALLBACK = {
   INR: "Indian Rupee", USD: "US Dollar", GBP: "British Pound", EUR: "Euro",
   AUD: "Australian Dollar", CAD: "Canadian Dollar", SGD: "Singapore Dollar",
   AED: "UAE Dirham", JPY: "Japanese Yen", LKR: "Sri Lankan Rupee",
 };
-const currencyLabel = (c) => (CURRENCY_NAMES[c] ? `${c} — ${CURRENCY_NAMES[c]}` : c);
 
 // Display-only thousands grouping for the amount field. Keeps the raw numeric string exact for the
 // backend (no floating-point math here); only formats what the operator sees. `decimals`=0 hides the
@@ -48,6 +47,7 @@ export default function Payments() {
   const [payments, setPayments] = useState([]);
   const [providers, setProviders] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [currencyCatalog, setCurrencyCatalog] = useState({});
   const [open, setOpen] = useState(false);
   const [refundFor, setRefundFor] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
@@ -94,6 +94,19 @@ export default function Payments() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ISO-4217 currency catalog (names/decimals) loaded once from the backend so the UI never
+  // relies on a hardcoded currency list.
+  useEffect(() => {
+    api.get("/currencies")
+      .then((res) => setCurrencyCatalog(Object.fromEntries((res.data || []).map((c) => [c.code, c]))))
+      .catch(() => setCurrencyCatalog({}));
+  }, []);
+
+  const currencyLabel = useCallback((c) => {
+    const name = currencyCatalog[c]?.name || CURRENCY_NAMES_FALLBACK[c];
+    return name ? `${c} — ${name}` : c;
+  }, [currencyCatalog]);
+
   const createPayment = async () => {
     setBusy(true);
     try {
@@ -123,10 +136,13 @@ export default function Payments() {
   const currencyOptions = useMemo(() => {
     const set = new Set();
     providers.forEach((p) => (p.supported_currencies || []).forEach((c) => set.add(c)));
-    // Baseline so the selector is never empty before discovery loads.
-    ["INR", "USD", "GBP", "EUR", "AUD", "CAD", "SGD", "JPY"].forEach((c) => set.add(c));
+    // Baseline so the selector is never empty before provider discovery loads — sourced from the
+    // ISO-4217 catalog (no hardcoded currency list) when available.
+    if (set.size === 0) {
+      Object.keys(currencyCatalog).forEach((c) => set.add(c));
+    }
     return Array.from(set).sort();
-  }, [providers]);
+  }, [providers, currencyCatalog]);
 
   // Effective currencies a provider can process = its account currencies (when configured) else the
   // plugin's declared capability. Used only for UI hinting; the server stays authoritative.

@@ -15,7 +15,7 @@ from app.models.commerce import CheckoutSession
 from app.models.acceptance import PaymentAcceptanceAccount
 from app.models.payment import Payment
 from app.models.tenant import Tenant
-from app.schemas import CheckoutCreate, CheckoutOut, CheckoutPay
+from app.schemas import CheckoutCreate, CheckoutOut, CheckoutPay, DemoUpiPay
 from app.services import payment_engine
 
 router = APIRouter(prefix="/api", tags=["checkout"])
@@ -28,6 +28,7 @@ async def _create_session(db: AsyncSession, *, tenant_id, body: CheckoutCreate, 
         reference=body.reference or f"CHK-{uuid.uuid4().hex[:8].upper()}",
         amount_minor=body.amount_minor,
         currency=body.currency,
+        provider_key=body.provider_key or "mock",
         description=body.description,
         customer_email=body.customer_email,
         success_url=body.success_url,
@@ -109,6 +110,7 @@ async def public_get_session(token: str, db: AsyncSession = Depends(get_db),
         "reference": session.reference,
         "amount_minor": session.amount_minor,
         "currency": session.currency,
+        "provider_key": session.provider_key,
         "description": session.description,
         "status": "expired" if (expired and session.status == "open") else session.status,
         "success_url": session.success_url,
@@ -165,6 +167,98 @@ async def public_pay(token: str, body: CheckoutPay, db: AsyncSession = Depends(g
         amount_minor=session.amount_minor, currency=session.currency, provider_key=session.provider_key,
         description=session.description, customer_email=body.customer_email or session.customer_email,
         idempotency_key=f"checkout_{session.token}", metadata={"source": "hosted_checkout"},
+    )
+    if payment.status in ("succeeded", "captured"):
+        session.status = "paid"
+        session.payment_id = payment.id
+        await db.commit()
+        return {"status": "paid", "payment_id": str(payment.id), "success_url": session.success_url}
+    await db.commit()
+    raise HTTPException(status_code=402, detail="Payment was declined by the sandbox provider")
+
+
+# ---- Demo UPI checkout (sandbox-only walkthrough for the demo_upi provider) ----
+_DEMO_UPI_APPS = [
+    {"key": "phonepe", "label": "PhonePe"},
+    {"key": "gpay", "label": "Google Pay"},
+    {"key": "paytm", "label": "Paytm"},
+    {"key": "bhim", "label": "BHIM"},
+    {"key": "other", "label": "Other UPI App"},
+    {"key": "qr", "label": "Scan QR"},
+]
+
+
+@router.get("/public/checkout/{token}/upi")
+async def public_demo_upi_info(token: str, db: AsyncSession = Depends(get_db),
+                               _rl: None = Depends(rate_limit("checkout_get", 60, 60))):
+    """Demo UPI checkout context (public): the app choices + a scannable UPI deep-link payload.
+
+    Sandbox demonstration only. The payload is a standard UPI deep link (contains no card data)
+    built from the tenant's highest-priority eligible acceptance VPA, or a demo VPA fallback.
+    """
+    res = await db.execute(select(CheckoutSession).where(CheckoutSession.token == token))
+    session = res.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Checkout session not found")
+    if session.provider_key != "demo_upi":
+        raise HTTPException(status_code=400, detail="This checkout is not a Demo UPI checkout")
+    tenant = await db.get(Tenant, session.tenant_id)
+    acc_res = await db.execute(
+        select(PaymentAcceptanceAccount).where(
+            PaymentAcceptanceAccount.tenant_id == session.tenant_id,
+            PaymentAcceptanceAccount.enabled.is_(True),
+            PaymentAcceptanceAccount.currency == session.currency,
+        ).order_by(PaymentAcceptanceAccount.priority, PaymentAcceptanceAccount.created_at))
+    acc = acc_res.scalars().first()
+    vpa = (acc.upi_vpa if acc and acc.upi_vpa else "cloudpay@mockbank")
+    payee = (tenant.name if tenant else "CloudPay")
+    amount = f"{session.amount_minor / 100:.2f}"
+    upi_link = (f"upi://pay?pa={vpa}&pn={payee}&am={amount}"
+                f"&cu={session.currency}&tn={session.reference}")
+    return {
+        "vpa": vpa,
+        "payee": payee,
+        "upi_link": upi_link,
+        "apps": _DEMO_UPI_APPS,
+        "amount_minor": session.amount_minor,
+        "currency": session.currency,
+    }
+
+
+@router.post("/public/checkout/{token}/upi/pay")
+async def public_demo_upi_pay(token: str, body: DemoUpiPay, db: AsyncSession = Depends(get_db),
+                              _rl: None = Depends(rate_limit("checkout_pay", 20, 60))):
+    """Authorize a DEMO UPI checkout (sandbox demo_upi provider only).
+
+    outcome == "success" -> processes a genuine sandbox payment through the demo_upi provider
+    (payment_method=upi, country=IN) and marks the session paid. outcome in {failed, pending} is
+    a SIMULATED walkthrough state (no payment is recorded, the session stays open) so operators
+    can see each UPI result screen. No real money moves; the demo_upi plugin is sandbox-only.
+    """
+    res = await db.execute(select(CheckoutSession).where(CheckoutSession.token == token))
+    session = res.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Checkout session not found")
+    if session.provider_key != "demo_upi":
+        raise HTTPException(status_code=400, detail="This checkout is not a Demo UPI checkout")
+    if session.status == "paid":
+        raise HTTPException(status_code=400, detail="This checkout has already been paid")
+    if session.expires_at:
+        exp = session.expires_at if session.expires_at.tzinfo else session.expires_at.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="This checkout has expired")
+
+    if body.outcome != "success":
+        # Simulated walkthrough state — no payment recorded, session stays open.
+        return {"status": "simulated", "outcome": body.outcome, "upi_app": body.upi_app}
+
+    payment = await payment_engine.create_payment(
+        db, tenant_id=session.tenant_id, actor=None, reference=session.reference,
+        amount_minor=session.amount_minor, currency=session.currency, provider_key="demo_upi",
+        environment="sandbox", description=session.description,
+        customer_email=body.customer_email or session.customer_email,
+        idempotency_key=f"demoupi_{session.token}", country="IN", payment_method="upi", flow="direct",
+        metadata={"source": "demo_upi_checkout", "upi_app": body.upi_app},
     )
     if payment.status in ("succeeded", "captured"):
         session.status = "paid"

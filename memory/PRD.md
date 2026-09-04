@@ -925,3 +925,35 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Tests: testing_agent iteration_27 — frontend 100% (all 10 criteria: open, 7-step rail, provider
   cards, Next gating, env/creds/capabilities/acceptance/test/review, mock e2e save creates account +
   grid refresh + success toast, Back preserves state). No bugs. Configured-providers grid unchanged.
+
+
+## Demo UPI Checkout + QR + Currency Catalog API + Provider Health Badge (2026-06, additive)
+Four additive features; no core payment/engine/ledger change. demo_upi stays sandbox-only.
+- Currency Catalog API: NEW app/data/currency_catalog.py (52 ISO-4217 entries: code, name, decimals,
+  symbol) + GET /api/currencies (auth via get_current_user). Payments.jsx now fetches it into
+  currencyCatalog and derives currency labels ("CODE — Name") + the option baseline from it, removing
+  the hardcoded CURRENCY_NAMES map and the hardcoded baseline currency list (fallback map kept only for
+  pre-load). Server capability validation stays authoritative.
+- Demo UPI Checkout (customer-facing): CheckoutCreate/CheckoutOut gained provider_key (default mock);
+  operators pick "Demo UPI (INR sandbox)" in the Hosted Checkout create dialog (checkout-method-select)
+  which creates a demo_upi INR session. CheckoutPage.jsx renders a DemoUpiCheckout journey when
+  session.provider_key==='demo_upi': app-choice grid (PhonePe/GPay/Paytm/BHIM/Other/Scan QR) ->
+  either a scannable QR screen (qrcode.react QRCodeSVG from a upi:// deep link) or a simulated UPI-PIN
+  keypad screen -> processing -> result. Outcomes: success runs a GENUINE sandbox payment via
+  payment_engine.create_payment(provider_key='demo_upi', country='IN', payment_method='upi',
+  flow='direct') and marks the session paid; failed/pending are SIMULATED UI states that record NO
+  payment (session stays open) so operators can walk every screen honestly.
+- Backend (checkout.py, additive public endpoints, sandbox-only, demo_upi guard): GET
+  /api/public/checkout/{token}/upi (apps + upi_link + vpa from highest-priority acceptance VPA or
+  cloudpay@mockbank fallback) and POST /api/public/checkout/{token}/upi/pay (DemoUpiPay: upi_app,
+  outcome). New schema DemoUpiPay. public_get_session now returns provider_key.
+- Provider Health Badge: Providers.jsx configured cards show a live health badge
+  (provider-health-badge-{id}) — Healthy(green)/Down(red)/Checking — via GET /providers/{key}/health;
+  clicking re-checks. Card header restructured (health badge top-right, active/env/priority row below).
+- Deps: qrcode.react@4.2.0 (yarn). Files: app/data/currency_catalog.py, app/data/__init__.py,
+  app/routers/config.py, app/routers/checkout.py, app/schemas/__init__.py, frontend Payments.jsx,
+  Providers.jsx, Checkout.jsx, CheckoutPage.jsx.
+- Tests: testing_agent iteration_28 — backend 100% (12/12 pytest incl. currencies auth-gate, demo_upi
+  session/info/success-payment/simulated-outcome), frontend ~95% then FIXED the one LOW issue
+  (DemoUpiCheckout now owns its own success screen; parent no longer unmounts it on success so
+  upi-result-paid renders — verified via screenshot, ₹299 paid). test_iter28_demo_upi_currencies.py.

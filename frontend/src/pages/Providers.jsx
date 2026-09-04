@@ -57,6 +57,7 @@ export default function Providers() {
   const [health, setHealth] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [acceptance, setAcceptance] = useState([]);
+  const [cardHealth, setCardHealth] = useState({});
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
@@ -68,6 +69,21 @@ export default function Providers() {
     setConfigured(c.data);
   }, [selectedTenantId]);
   useEffect(() => { load(); }, [load]);
+
+  const checkCardHealth = useCallback(async (p) => {
+    setCardHealth((h) => ({ ...h, [p.id]: { loading: true } }));
+    try {
+      const res = await api.get(`/providers/${p.provider_key}/health`, { params: { environment: p.mode } });
+      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: res.data.status } }));
+    } catch (e) {
+      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: "error" } }));
+    }
+  }, []);
+
+  useEffect(() => {
+    configured.forEach((p) => { if (cardHealth[p.id] === undefined) checkCardHealth(p); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configured]);
 
   const meta = available.find((p) => p.key === form.provider_key);
   const isUpi = (meta?.payment_methods || []).includes("upi");
@@ -502,11 +518,34 @@ export default function Providers() {
                     <p className="text-xs font-mono text-muted-foreground">{p.provider_key}</p>
                   </div>
                 </div>
-                <StatusBadge status={p.enabled ? "active" : "suspended"} />
+                {(() => {
+                  const h = cardHealth[p.id];
+                  const healthy = h && !h.loading && h.status === "up";
+                  const label = !h || h.loading ? "Checking…" : healthy ? "Healthy" : "Down";
+                  const cls = !h || h.loading
+                    ? "bg-secondary/60 text-muted-foreground border-border"
+                    : healthy
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : "bg-red-500/10 text-red-400 border-red-500/30";
+                  return (
+                    <button
+                      type="button"
+                      data-testid={`provider-health-badge-${p.id}`}
+                      onClick={() => checkCardHealth(p)}
+                      title="Re-check health"
+                      className={`inline-flex items-center gap-1.5 text-[11px] font-mono px-2 py-1 rounded-full border transition-colors ${cls}`}
+                    >
+                      {!h || h.loading
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <span className={`h-1.5 w-1.5 rounded-full ${healthy ? "bg-emerald-400" : "bg-red-400"}`} />}
+                      {label}
+                    </button>
+                  );
+                })()}
               </div>
-              <div className="mt-4 flex items-center justify-between text-xs font-mono text-muted-foreground">
-                <span>ENV: {p.mode.toUpperCase()}</span>
-                <span>PRIORITY: {p.priority}</span>
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <StatusBadge status={p.enabled ? "active" : "suspended"} />
+                <span className="font-mono text-muted-foreground">ENV: {p.mode.toUpperCase()} · P{p.priority}</span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(p.supported_currencies || []).map((c) => (

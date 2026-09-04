@@ -14,6 +14,7 @@ from app.models.finance import FeeRule
 from app.models.payment import Payment, PaymentProvider
 from app.providers.base import ChargeRequest, ProviderError
 from app.providers.registry import get_provider, has_provider, list_providers
+from app.data.currency_catalog import list_currencies
 from app.services import payment_receipt_service
 from app.schemas import (
     FeatureFlagCreate,
@@ -32,6 +33,14 @@ from app.services import provider_health as provider_health_svc
 from app.services.secret_store import get_secret_store
 
 router = APIRouter(prefix="/api", tags=["config"])
+
+
+# ---- Currency catalog (ISO-4217 reference data) ----
+@router.get("/currencies")
+async def get_currencies(user=Depends(get_current_user)):
+    """Read-only ISO-4217 currency catalog (code, name, decimals, symbol)."""
+    return list_currencies()
+
 
 
 class ProviderFlowRequest(BaseModel):
