@@ -15,6 +15,11 @@ from app.models.payment import Payment
 router = APIRouter(prefix="/api/reports/export", tags=["reports"])
 
 
+def _payment_method(p) -> str:
+    m = str((p.metadata_json or {}).get("method") or ("upi" if p.provider_key == "demo_upi" else "card")).lower()
+    return "upi" if "upi" in m else "card"
+
+
 def _csv_response(headers: list[str], rows: list[list], filename: str) -> StreamingResponse:
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -34,12 +39,12 @@ async def export_payments(tenant_id: str | None = None, db: AsyncSession = Depen
     tid = resolve_tenant_id(user, tenant_id)
     res = await db.execute(select(Payment).where(Payment.tenant_id == tid).order_by(Payment.created_at.desc()))
     rows = [[
-        str(p.id), p.reference, p.provider_key, p.provider_txn_id or "", p.status,
+        str(p.id), p.reference, p.provider_key, _payment_method(p), p.provider_txn_id or "", p.status,
         f"{p.amount_minor / 100:.2f}", f"{p.fee_minor / 100:.2f}", f"{p.net_minor / 100:.2f}",
         p.currency, p.customer_email or "", p.risk_score, p.created_at.isoformat(),
     ] for p in res.scalars().all()]
     return _csv_response(
-        ["id", "reference", "provider", "provider_txn_id", "status", "amount", "fee", "net",
+        ["id", "reference", "provider", "method", "provider_txn_id", "status", "amount", "fee", "net",
          "currency", "customer_email", "risk_score", "created_at"],
         rows, "payments.csv")
 

@@ -121,9 +121,11 @@ async def generate_report(db: AsyncSession, *, tenant: Tenant, report_type: str 
     w.writerow([f"CloudPay {report_type.capitalize()} Report — {tenant.name}", label])
     w.writerow([])
     w.writerow(["PAYMENTS"])
-    w.writerow(["reference", "status", "amount", "fee", "net", "currency", "customer_email", "created_at"])
+    w.writerow(["reference", "method", "status", "amount", "fee", "net", "currency", "customer_email", "created_at"])
     for p in payments:
-        w.writerow([p.reference, p.status, _fmt(p.amount_minor), _fmt(p.fee_minor), _fmt(p.net_minor),
+        _pm = str((p.metadata_json or {}).get("method") or ("upi" if p.provider_key == "demo_upi" else "card")).lower()
+        _pm = "upi" if "upi" in _pm else "card"
+        w.writerow([p.reference, _pm, p.status, _fmt(p.amount_minor), _fmt(p.fee_minor), _fmt(p.net_minor),
                     p.currency, p.customer_email or "", p.created_at.isoformat()])
     w.writerow([])
     w.writerow(["SETTLEMENTS"])

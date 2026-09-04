@@ -1016,3 +1016,15 @@ Two additive enhancements; backend change limited to surfacing refund provider_k
   frontend 100% (18/18: both filters with counts/empty states + matching row badges, sparkline appends
   bars on re-check and caps at 16). No issues.
 
+
+## Payment Method in CSV Reports (2026-06, additive, backend-only)
+- Added a `method` (upi|card) column to the payments CSV outputs so finance can slice UPI vs Card.
+  * app/routers/reports_export.py GET /api/reports/export/payments.csv: new "method" column after
+    "provider" (helper _payment_method: metadata_json['method'] normalized to upi/card, fallback
+    demo_upi->upi else card).
+  * app/services/report_generation.py PAYMENTS section (scheduled/on-demand daily/weekly/monthly/
+    custom reports + emailed CSV): new "method" column after "reference", same derivation.
+- No new endpoint/migration/frontend change (existing Export CSV button + scheduled reports pick it up).
+- Verified via curl: payments.csv header now id,reference,provider,method,... with method=card for mock
+  and method=upi for demo_upi rows; scheduled daily run generates cleanly (7 payments, file_id returned).
+
