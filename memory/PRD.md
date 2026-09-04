@@ -1083,3 +1083,11 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
   filter is active. Verified chips activate/filter (all demo payments are same-day so 7/30/All all
   show 7). Only frontend/src/pages/Overview.jsx changed.
 
+## Rail Mix Trend Line (2026-06, FRONTEND-ONLY, additive)
+- Overview.jsx rail mix card now shows a "UPI vs Card trend" line chart (rail-mix-trend) below the
+  per-currency blocks: railTrend useMemo buckets the (range + succeeded-filtered) payments by day
+  (ISO date) into {name, upi, card} counts; rendered with recharts LineChart (two lines, UPI +
+  Card, legend, MM-DD axis). Renders only when >=2 distinct days exist (a single-day series is
+  meaningless). Verified by temporarily backdating two payments (09-02/09-03/09-04) — the two-line
+  trend rendered correctly — then reverting the created_at values. Only Overview.jsx changed.
+

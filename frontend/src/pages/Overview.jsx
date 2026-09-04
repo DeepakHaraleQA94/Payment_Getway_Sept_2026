@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
+  Area, AreaChart, Line, LineChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { TrendingUp, CheckCircle2, XCircle, Layers, ArrowUpRight } from "lucide-react";
 import { api, money } from "@/lib/api";
@@ -64,6 +64,25 @@ export default function Overview() {
         byCcy[ccy][rail].amount += x.amount_minor || 0;
       });
     return byCcy;
+  }, [allPayments, succeededOnly, rangeDays]);
+
+  const railTrend = useMemo(() => {
+    const cutoff = rangeDays ? Date.now() - rangeDays * 86400000 : 0;
+    const buckets = {};
+    allPayments
+      .filter((x) => !succeededOnly || ["succeeded", "captured"].includes(x.status))
+      .filter((x) => !cutoff || new Date(x.created_at).getTime() >= cutoff)
+      .forEach((x) => {
+        const d = new Date(x.created_at);
+        const key = d.toISOString().slice(0, 10);
+        const m = String((x.metadata && x.metadata.method) || (x.provider_key === "demo_upi" ? "upi" : "card")).toLowerCase();
+        const rail = m.includes("upi") ? "upi" : "card";
+        if (!buckets[key]) buckets[key] = { day: key, upi: 0, card: 0 };
+        buckets[key][rail] += 1;
+      });
+    return Object.values(buckets)
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map((b) => ({ name: b.day.slice(5), upi: b.upi, card: b.card }));
   }, [allPayments, succeededOnly, rangeDays]);
 
   useEffect(() => { load(); }, [load]);
@@ -163,6 +182,24 @@ export default function Overview() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+              {railTrend.length >= 2 && (
+                <div className="mt-6 pt-5 border-t border-border" data-testid="rail-mix-trend">
+                  <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-3">
+                    UPI vs Card trend {rangeDays ? `(last ${rangeDays}d)` : ""}
+                  </p>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <LineChart data={railTrend} margin={{ left: -18, right: 8, top: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(217 33% 17%)" vertical={false} />
+                      <XAxis dataKey="name" stroke="hsl(215 20% 65%)" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="hsl(215 20% 65%)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={{ background: "hsl(221 39% 11%)", border: "1px solid hsl(217 33% 17%)", borderRadius: 8, fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Line type="monotone" dataKey="upi" name="UPI" stroke="hsl(217 91% 60%)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="card" name="Card" stroke="hsl(239 84% 74%)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               )}
             </div>
