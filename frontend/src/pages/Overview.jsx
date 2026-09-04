@@ -29,6 +29,7 @@ export default function Overview() {
   const [summary, setSummary] = useState(null);
   const [statusData, setStatusData] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [railMix, setRailMix] = useState({ upi: { count: 0, amount: 0 }, card: { count: 0, amount: 0 } });
   const tenant = tenants.find((t) => t.id === selectedTenantId);
   const currency = tenant?.default_currency || "USD";
 
@@ -43,6 +44,14 @@ export default function Overview() {
     setSummary(s.data);
     setStatusData(r.data);
     setPayments(pay.data.slice(0, 6));
+    const mix = { upi: { count: 0, amount: 0 }, card: { count: 0, amount: 0 } };
+    (pay.data || []).forEach((x) => {
+      const m = String((x.metadata && x.metadata.method) || (x.provider_key === "demo_upi" ? "upi" : "card")).toLowerCase();
+      const rail = m.includes("upi") ? "upi" : "card";
+      mix[rail].count += 1;
+      mix[rail].amount += x.amount_minor || 0;
+    });
+    setRailMix(mix);
   }, [selectedTenantId]);
 
   useEffect(() => { load(); }, [load]);
@@ -62,6 +71,53 @@ export default function Overview() {
         <Kpi icon={Layers} label="Tenants" value={summary?.tenant_count ?? 0}
              sub="on platform" accent="bg-sky-500/15 text-sky-400" testid="kpi-tenants" />
       </div>
+
+      <Panel className="mt-6" data-testid="rail-mix-card">
+        {(() => {
+          const upiC = railMix.upi.count, cardC = railMix.card.count;
+          const total = upiC + cardC;
+          const upiPct = total ? Math.round((upiC / total) * 100) : 0;
+          const cardPct = total ? 100 - upiPct : 0;
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-heading text-lg font-medium">Payment Mix by Rail</h3>
+                <span className="text-xs font-mono text-muted-foreground">{total} payments</span>
+              </div>
+              {total === 0 ? (
+                <EmptyState message="No payments yet to break down by rail." testid="rail-mix-empty" />
+              ) : (
+                <>
+                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-secondary/40" data-testid="rail-mix-bar">
+                    <div className="bg-primary" style={{ width: `${upiPct}%` }} title={`UPI ${upiPct}%`} />
+                    <div className="bg-indigo-400" style={{ width: `${cardPct}%` }} title={`Card ${cardPct}%`} />
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div data-testid="rail-mix-upi">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-sm bg-primary" />
+                        <span className="text-sm font-medium">UPI</span>
+                        <span className="text-xs font-mono text-muted-foreground">{upiPct}%</span>
+                      </div>
+                      <p className="mt-1 font-mono text-lg">{money(railMix.upi.amount, currency)}</p>
+                      <p className="text-xs text-muted-foreground">{upiC} payments</p>
+                    </div>
+                    <div data-testid="rail-mix-card-col">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-sm bg-indigo-400" />
+                        <span className="text-sm font-medium">Card</span>
+                        <span className="text-xs font-mono text-muted-foreground">{cardPct}%</span>
+                      </div>
+                      <p className="mt-1 font-mono text-lg">{money(railMix.card.amount, currency)}</p>
+                      <p className="text-xs text-muted-foreground">{cardC} payments</p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
+      </Panel>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <Panel className="lg:col-span-2">
