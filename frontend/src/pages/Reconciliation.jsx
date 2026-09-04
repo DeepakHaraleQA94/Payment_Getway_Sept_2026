@@ -219,6 +219,22 @@ export default function Reconciliation() {
           </DialogHeader>
           {detail && (
             <>
+              <div className="flex items-center gap-3 text-xs font-mono px-1 pb-1" data-testid="reconciliation-method-split">
+                <span className="text-muted-foreground">By rail:</span>
+                <span className="inline-flex items-center gap-1 text-primary">
+                  UPI <span className="opacity-80">{detail.method_summary?.upi || 0}</span>
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span className="inline-flex items-center gap-1">
+                  Card <span className="opacity-80">{detail.method_summary?.card || 0}</span>
+                </span>
+                {detail.method_summary?.unknown ? (
+                  <>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="text-muted-foreground">Unknown {detail.method_summary.unknown}</span>
+                  </>
+                ) : null}
+              </div>
               <div className="flex flex-wrap gap-2" data-testid="reconciliation-summary">
                 <button className={`text-xs px-2 py-1 rounded border ${!filter ? "border-primary" : "border-border"}`}
                   data-testid="reconciliation-filter-all" onClick={() => setFilter("")}>All ({detail.items.length})</button>

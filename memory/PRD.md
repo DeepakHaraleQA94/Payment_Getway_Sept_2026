@@ -1050,3 +1050,12 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
 - Verified via Playwright: button present, download fired (reconciliation_RAILTEST1.csv). Only
   frontend/src/pages/Reconciliation.jsx changed.
 
+
+## Reconciliation Method Split Header (2026-06, additive)
+- Backend: GET /api/reconciliation/runs/{id} now returns a `method` on each item (resolved from the
+  linked payment) plus a `method_summary` (per-method line counts). Uses the existing _pm_from_payment.
+- Frontend (Reconciliation.jsx): the results dialog shows a one-line "By rail: UPI N · Card N
+  (· Unknown N)" summary (reconciliation-method-split) above the outcome filter chips.
+- Verified: run_detail returns method_summary {upi:6}; UI header renders "By rail: UPI 6 · Card 0".
+  Files: app/routers/reconciliation.py, frontend/src/pages/Reconciliation.jsx.
+

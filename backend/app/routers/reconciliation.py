@@ -122,7 +122,16 @@ async def run_detail(run_id: str, tenant_id: str | None = None, outcome: str | N
     if outcome:
         q = q.where(ReconciliationItem.outcome == outcome)
     items = (await db.execute(q.order_by(ReconciliationItem.outcome).limit(2000))).scalars().all()
-    return {"run": _run_out(run), "items": [_item_out(i) for i in items]}
+    pids = [i.payment_id for i in items if i.payment_id]
+    pmap = {}
+    if pids:
+        prows = (await db.execute(select(Payment).where(Payment.id.in_(pids)))).scalars().all()
+        pmap = {p.id: p for p in prows}
+    items_out = [{**_item_out(i), "method": _pm_from_payment(pmap.get(i.payment_id))} for i in items]
+    method_summary = {}
+    for it in items_out:
+        method_summary[it["method"]] = method_summary.get(it["method"], 0) + 1
+    return {"run": _run_out(run), "items": items_out, "method_summary": method_summary}
 
 
 def _pm_from_payment(p) -> str:
