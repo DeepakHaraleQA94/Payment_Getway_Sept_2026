@@ -6,6 +6,7 @@ changes required. Only the Mock dev/test provider is built in.
 """
 from app.providers.base import PaymentProviderAdapter
 from app.providers.example_provider import ExampleExternalProvider
+from app.providers.demo_upi import DemoUpiProvider
 from app.providers.mock import MockProvider
 from app.providers.stripe_provider import StripeProvider
 
@@ -40,3 +41,6 @@ register(ExampleExternalProvider())
 # Stripe: an ISOLATED real-PSP adapter (SANDBOX/TEST only; live disabled). Talks to Stripe's real
 # test API via the SDK, entirely behind the generic contract — the core payment engine is untouched.
 register(StripeProvider())
+# Demo UPI: ISOLATED sandbox-only plugin for the development UPI journey (INR intent/QR + demo
+# app choices). Reuses the generic contract; live mode is rejected by capability checks.
+register(DemoUpiProvider())

@@ -882,3 +882,22 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
 - Tests: tests/test_payment_acceptance.py now 10 (added manual decision + csv export). Testing agent
   iteration_26: backend 100% (27), frontend 100% (Primary move, verify/approve+reject, CSV, checkout
   +/- block). No existing payment/provider/ledger/routing/checkout behavior changed.
+
+## Demo UPI provider — foundational new plugin (2026-06, sandbox-only, additive)
+- NEW app/providers/demo_upi.py (DemoUpiProvider, key 'demo_upi'): ISOLATED sandbox-only UPI demo
+  plugin. Subclasses the built-in Mock reference adapter so the ENTIRE CloudPay core (payment engine,
+  routing, idempotency, fee engine, ledger, state machine, webhook reconciliation) is reused UNCHANGED.
+  supported_currencies=[INR], countries=[IN], methods=[upi,upi_intent,upi_qr], flows=[intent,qr,direct],
+  supported_environments=[sandbox] only. capabilities() adds demo:true, sandbox_only:true, and
+  upi_apps=[PhonePe, Google Pay, Paytm, BHIM, Other UPI App, Scan QR] (DEMO UI choices, NOT real
+  integrations). Registered via existing registry (registry.py). NEVER real money/bank/PSP/network.
+- Verified: demo_upi in /api/providers/available (sandbox-only, 6 apps); sandbox INR upi intent/qr/direct
+  -> succeeded through the existing engine; demo_upi+live rejected server-side; card method rejected
+  (capability-aware). Unit tests tests/test_demo_upi_provider.py (5) + regression capture_void green.
+- NOT YET BUILT (explicitly deferred, honest status — large remaining scope from the master spec):
+  frontend Demo UPI hosted-checkout journey (app selection page, simulated UPI-PIN authorization page,
+  QR image rendering, Simulate Success/Failure/Pending/Timeout outcome buttons), the Provider Connection
+  Wizard UI, a centralized ISO-4217 currency catalog table, demo merchant test page, and the full
+  30-40 item test matrix. These are additive and can be layered on this foundation without core changes.
+- Infra note: another sandbox pod reset occurred mid-task (supervisor+postgres down, cloudpay db wiped);
+  recovered (recreated role/db, migrations to b7d4e1a9c260, reseeded, login 200).
