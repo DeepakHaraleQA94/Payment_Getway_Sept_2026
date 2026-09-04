@@ -1062,11 +1062,10 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
 
 ## Rail Split on Overview (2026-06, FRONTEND-ONLY, additive)
 - Overview.jsx computes a UPI-vs-Card mix from the tenant's payments (method = metadata.method,
-  fallback demo_upi->upi else card) and renders a "Payment Mix by Rail" card (rail-mix-card): a
-  two-segment split bar (rail-mix-bar) + per-rail count/percent/amount columns (rail-mix-upi /
-  rail-mix-card-col), with an empty state when no payments. Reuses existing /payments data (no new API).
-- Note: amounts are summed in the tenant default currency label; mixed-currency demo data (INR UPI +
-  USD card) shows both under one symbol — split/percent are the at-a-glance signal.
-- Verified via screenshot: "Payment Mix by Rail · 7 payments" UPI 86% $2,328.50 (6) / Card 14% $50.00 (1).
+  fallback demo_upi->upi else card) and renders a "Payment Mix by Rail" card (rail-mix-card).
+- UPDATED: now grouped PER CURRENCY (railByCurrency) — one block per currency (rail-mix-ccy-{CCY})
+  with its own split bar (rail-mix-bar-{CCY}) and UPI/Card columns (rail-mix-upi-{CCY} /
+  rail-mix-card-{CCY}) formatted with money(amount, ccy), so INR and USD totals never blend symbols.
+  Verified: INR block UPI 100% ₹2,328.50 (6) / Card ₹0.00; USD block Card 100% $50.00 (1).
   Only frontend/src/pages/Overview.jsx changed.
 
