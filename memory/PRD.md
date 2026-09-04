@@ -957,3 +957,25 @@ Four additive features; no core payment/engine/ledger change. demo_upi stays san
   session/info/success-payment/simulated-outcome), frontend ~95% then FIXED the one LOW issue
   (DemoUpiCheckout now owns its own success screen; parent no longer unmounts it on success so
   upi-result-paid renders — verified via screenshot, ₹299 paid). test_iter28_demo_upi_currencies.py.
+
+## UPI-in-Wizard + Method Badge + Live Status Board + QR Download (2026-06, FRONTEND-ONLY, additive)
+Four additive frontend enhancements; no backend/DB/engine change (reuse existing APIs).
+- UPI In Wizard: after the Connect Provider wizard saves a demo_upi provider, a follow-up dialog
+  (demo-link-dialog) lets the operator generate a shareable Demo UPI checkout link — amount input
+  (demo-link-amount, default 1500) -> POST /checkout/sessions {provider_key:'demo_upi',currency:'INR'}
+  -> link (demo-link-url) with copy/open. Providers.jsx only.
+- Payment Method Badge: new shared MethodBadge (components/common.jsx, UPI vs Card icon+label).
+  Payments table adds a Method column (payment-method-{reference}) from p.metadata.method (fallback
+  demo_upi->upi else card); Hosted Checkout table adds a Method column (checkout-method-badge-{reference})
+  from s.provider_key.
+- Live Status Board: Providers.jsx auto-refreshes every configured provider's health badge every 15s
+  (setInterval calling checkCardHealth; cleaned up on unmount); badge still clickable for immediate
+  re-check; shows Healthy/Down/Checking.
+- QR Download: Demo UPI QR screen (CheckoutPage.jsx) now renders QRCodeCanvas (qrcode.react) with a
+  qrRef + a 'Download QR' button (upi-qr-download) that serializes the canvas to a PNG
+  (upi-qr-<reference>.png).
+- Files: components/common.jsx, pages/Providers.jsx, pages/Payments.jsx, pages/Checkout.jsx,
+  pages/CheckoutPage.jsx. Tests: testing_agent iteration_29 — frontend 100% (7/7): wizard demo-link
+  dialog + working link, method badges on both tables, 15s auto-refresh observed, QR PNG download
+  (verified filename), demo UPI PIN/QR success regressions. No issues.
+

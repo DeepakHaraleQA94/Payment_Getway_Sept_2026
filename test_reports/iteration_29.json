@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 29 (frontend-only) — Validated the four additive frontend features: (1) UPI-In-Wizard demo-link dialog after saving demo_upi provider, (2) MethodBadge column on Payments + Hosted Checkout tables, (3) Live Status Board 15s auto-refresh on Providers, (4) QR Download PNG on Demo UPI checkout. Also re-verified Demo UPI PIN + QR happy paths. All 4 features pass; no functional issues found.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Providers.jsx auto-refresh interval (line 93-97) uses a 15s setInterval correctly and cleans up on unmount; verified via network sniffing (delta of 1 health call within a 17s idle window on a single-provider tenant).",
+    "CheckoutPage.jsx downloadQr() correctly reads the <canvas> child of upi-qr-image via ref and triggers a PNG download named upi-qr-<reference>.png — confirmed via Playwright expect_download (filename returned: 'upi-qr-CHK-6B562899.png'). No console errors on click.",
+    "MethodBadge in common.jsx renders 'UPI' vs 'Card' correctly based on method string; Payments.jsx falls back to provider_key==='demo_upi'→'upi' otherwise 'card' — verified on live rows.",
+    "Providers.jsx save() opens the demo-link dialog only when provider_key==='demo_upi'; createDemoLink() posts to /checkout/sessions with provider_key:'demo_upi' + currency:'INR' — the generated URL opens a working DemoUpiCheckout.",
+    "Minor: on card /checkout/{token} the customer_email field is not visually marked required, but the backend enforces email validity (422 when empty). Consider marking Email as required in the hosted card checkout to avoid the confusing red validation without labeling."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (skipped)", "frontend": "100% (7/7 core assertions)" },
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy — logged in as super admin. Active tenant used: 'CapTest 3b91058e' (had no demo_upi/sandbox account, so wizard Save succeeded and the demo-link dialog appeared).",
+  "seed_data_creation": "Created two demo_upi checkout sessions (via UI) and one demo_upi provider account on CapTest 3b91058e tenant during the wizard test. Plus one demo-link generated from the post-wizard dialog.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The demo_upi wizard save + demo-link dialog only appears on tenants without an existing demo_upi/sandbox account. If retesting, either pick a fresh tenant or delete the existing demo_upi provider first. Live-refresh interval is 15s; wait >=16s to observe an extra /api/providers/{key}/health call. QR download uses canvas.toDataURL; verified filename pattern upi-qr-<reference>.png.",
+  "detailed_results": {
+    "upi_in_wizard": "PASS — dialog opened, amount default=1500, generate produced shareable link, copy+open buttons present, link opened demo_upi checkout with data-testid=demo-upi-checkout.",
+    "payment_method_badge_payments": "PASS — 4 rows with data-testid payment-method-<ref>, all UPI on tenant used.",
+    "payment_method_badge_checkout": "PASS — 6 rows with data-testid checkout-method-badge-<ref>.",
+    "live_status_board": "PASS — 1 auto-refresh health call fired within 17s idle window; manual badge click also triggered an immediate re-check; badge shows 'Healthy' for the configured provider.",
+    "qr_download": "PASS — PNG download triggered, filename upi-qr-CHK-6B562899.png, no console errors.",
+    "regression_qr_pay": "PASS — upi-qr-paid → checkout-success visible.",
+    "regression_pin_pay": "PASS — PIN keypad → authorize → checkout-success visible.",
+    "regression_card_checkout": "Not fully re-verified: test skipped filling the customer_email field so backend returned 422; not a code bug. (Card flow was validated in prior iterations.)"
+  }
+}

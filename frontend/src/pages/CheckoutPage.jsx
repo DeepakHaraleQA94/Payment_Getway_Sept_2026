@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, CheckCircle2, Zap, Loader2, Copy, Smartphone, QrCode, ChevronLeft, XCircle, Clock, ShieldCheck } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { Lock, CheckCircle2, Zap, Loader2, Copy, Smartphone, QrCode, ChevronLeft, XCircle, Clock, ShieldCheck, Download } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
 import { api, money, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,19 @@ function DemoUpiCheckout({ token, session, accent }) {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // paid | failed | pending
+  const qrRef = useRef(null);
+
+  const downloadQr = () => {
+    const canvas = qrRef.current?.querySelector("canvas");
+    if (!canvas) return;
+    const url = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `upi-qr-${session?.reference || "checkout"}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   useEffect(() => {
     (async () => {
@@ -111,9 +124,14 @@ function DemoUpiCheckout({ token, session, accent }) {
             </button>
             <p className="text-sm font-medium text-center">Scan with any UPI app</p>
             <div className="flex justify-center">
-              <div className="p-4 bg-white rounded-xl" data-testid="upi-qr-image">
-                <QRCodeSVG value={upiLink} size={188} level="M" />
+              <div className="p-4 bg-white rounded-xl" data-testid="upi-qr-image" ref={qrRef}>
+                <QRCodeCanvas value={upiLink} size={188} level="M" />
               </div>
+            </div>
+            <div className="flex justify-center">
+              <Button variant="outline" size="sm" data-testid="upi-qr-download" onClick={downloadQr}>
+                <Download className="h-3.5 w-3.5 mr-1.5" /> Download QR
+              </Button>
             </div>
             <div className="rounded-lg border border-border bg-secondary/40 p-3 flex items-center justify-between gap-2">
               <div className="min-w-0">

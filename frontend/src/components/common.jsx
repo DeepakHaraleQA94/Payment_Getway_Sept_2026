@@ -48,3 +48,27 @@ export function EmptyState({ message, testid }) {
     </div>
   );
 }
+
+// Small icon + label chip showing a payment method (UPI vs Card / wallet / bank).
+export function MethodBadge({ method, testid }) {
+  const m = String(method || "card").toLowerCase();
+  const isUpi = m.includes("upi");
+  const isWallet = m.includes("wallet");
+  const isBank = m.includes("bank");
+  const label = isUpi ? "UPI" : isWallet ? "Wallet" : isBank ? "Bank" : "Card";
+  const style = isUpi
+    ? "bg-primary/10 text-primary border-primary/25"
+    : "bg-secondary/60 text-muted-foreground border-border";
+  return (
+    <span data-testid={testid}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono border ${style}`}>
+      {isUpi ? (
+        <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 4 12 8-12 8z" /></svg>
+      ) : (
+        <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>
+      )}
+      {label}
+    </span>
+  );
+}
+

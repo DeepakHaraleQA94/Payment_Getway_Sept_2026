@@ -3,7 +3,7 @@ import { Plus, Undo2, Download, Info, GitBranch, CheckCircle2, XCircle, Mail, Ex
 import { toast } from "sonner";
 import { api, money, formatApiError, downloadCsv, toMinorUnits, currencySymbol, currencyDecimals } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
+import { PageHeader, Panel, StatusBadge, EmptyState, MethodBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -363,6 +363,7 @@ export default function Payments() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Reference</TableHead>
+                  <TableHead>Method</TableHead>
                   <TableHead>Provider Txn</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="text-right">Fee</TableHead>
@@ -376,6 +377,12 @@ export default function Payments() {
                 {payments.map((p) => (
                   <TableRow key={p.id} data-testid={`payment-row-${p.reference}`}>
                     <TableCell className="font-mono text-xs">{p.reference}</TableCell>
+                    <TableCell>
+                      <MethodBadge
+                        method={(p.metadata && p.metadata.method) || (p.provider_key === "demo_upi" ? "upi" : "card")}
+                        testid={`payment-method-${p.reference}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{p.provider_txn_id || "—"}</TableCell>
                     <TableCell className="text-right font-mono">{money(p.amount_minor, p.currency)}</TableCell>
                     <TableCell className="text-right font-mono text-muted-foreground">{money(p.fee_minor, p.currency)}</TableCell>

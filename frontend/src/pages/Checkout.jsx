@@ -3,7 +3,7 @@ import { Plus, Copy, ExternalLink, Check, Upload, Palette } from "lucide-react";
 import { toast } from "sonner";
 import { api, money, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { PageHeader, Panel, StatusBadge, EmptyState } from "@/components/common";
+import { PageHeader, Panel, StatusBadge, EmptyState, MethodBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -194,6 +194,7 @@ export default function Checkout() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Reference</TableHead>
+                  <TableHead>Method</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Status</TableHead>
@@ -205,6 +206,7 @@ export default function Checkout() {
                 {sessions.map((s) => (
                   <TableRow key={s.id} data-testid={`checkout-row-${s.reference}`}>
                     <TableCell className="font-mono text-xs">{s.reference}</TableCell>
+                    <TableCell><MethodBadge method={s.provider_key === "demo_upi" ? "upi" : "card"} testid={`checkout-method-badge-${s.reference}`} /></TableCell>
                     <TableCell className="text-right font-mono">{money(s.amount_minor, s.currency)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{s.description || "—"}</TableCell>
                     <TableCell><StatusBadge status={s.status} /></TableCell>

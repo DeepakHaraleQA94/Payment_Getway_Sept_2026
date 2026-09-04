@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Plus, Plug, Check, ChevronLeft, ChevronRight, ShieldCheck, KeyRound,
-  Layers, Wallet, Activity, ClipboardList, Loader2, CircleCheck, CircleX, Globe,
+  Layers, Wallet, Activity, ClipboardList, Loader2, CircleCheck, CircleX, Globe, Copy, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, formatApiError } from "@/lib/api";
@@ -58,6 +58,10 @@ export default function Providers() {
   const [healthBusy, setHealthBusy] = useState(false);
   const [acceptance, setAcceptance] = useState([]);
   const [cardHealth, setCardHealth] = useState({});
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [demoAmount, setDemoAmount] = useState("1500");
+  const [demoLink, setDemoLink] = useState(null);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedTenantId) return;
@@ -71,12 +75,12 @@ export default function Providers() {
   useEffect(() => { load(); }, [load]);
 
   const checkCardHealth = useCallback(async (p) => {
-    setCardHealth((h) => ({ ...h, [p.id]: { loading: true } }));
+    setCardHealth((h) => ({ ...h, [p.id]: { ...(h[p.id] || {}), loading: true } }));
     try {
       const res = await api.get(`/providers/${p.provider_key}/health`, { params: { environment: p.mode } });
-      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: res.data.status } }));
+      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: res.data.status, at: Date.now() } }));
     } catch (e) {
-      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: "error" } }));
+      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: "error", at: Date.now() } }));
     }
   }, []);
 
@@ -84,6 +88,13 @@ export default function Providers() {
     configured.forEach((p) => { if (cardHealth[p.id] === undefined) checkCardHealth(p); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configured]);
+
+  // Live status board: silently re-check every configured provider's health every 15s.
+  useEffect(() => {
+    if (!configured.length) return;
+    const id = setInterval(() => { configured.forEach((p) => checkCardHealth(p)); }, 15000);
+    return () => clearInterval(id);
+  }, [configured, checkCardHealth]);
 
   const meta = available.find((p) => p.key === form.provider_key);
   const isUpi = (meta?.payment_methods || []).includes("upi");
@@ -179,8 +190,27 @@ export default function Providers() {
       toast.success("Provider account connected");
       setOpen(false);
       load();
+      if (form.provider_key === "demo_upi") {
+        setDemoLink(null);
+        setDemoAmount("1500");
+        setDemoOpen(true);
+      }
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
     finally { setBusy(false); }
+  };
+
+  const createDemoLink = async () => {
+    setDemoBusy(true);
+    try {
+      const { data } = await api.post("/checkout/sessions", {
+        amount_minor: Math.round(parseFloat(demoAmount || "0") * 100),
+        currency: "INR",
+        provider_key: "demo_upi",
+        description: "Demo UPI checkout",
+      }, { params: { tenant_id: selectedTenantId } });
+      setDemoLink(`${window.location.origin}/checkout/${data.token}`);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setDemoBusy(false); }
   };
 
   const toggleEnabled = async (p) => {
@@ -499,6 +529,50 @@ export default function Providers() {
               >
                 Next <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Demo UPI: create a shareable demo checkout link right after connecting demo_upi */}
+      <Dialog open={demoOpen} onOpenChange={setDemoOpen}>
+        <DialogContent data-testid="demo-link-dialog">
+          <DialogHeader>
+            <DialogTitle>Demo UPI connected — create a shareable link</DialogTitle>
+            <DialogDescription>Generate a sandbox UPI checkout link to walk through the full customer journey (app choice, QR, UPI PIN).</DialogDescription>
+          </DialogHeader>
+          {!demoLink ? (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Amount (INR)</Label>
+                <Input data-testid="demo-link-amount" type="number" step="0.01" value={demoAmount}
+                  onChange={(e) => setDemoAmount(e.target.value)} placeholder="1500" />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-muted-foreground">Share this Demo UPI checkout link:</p>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/60 border border-border">
+                <code data-testid="demo-link-url" className="text-xs break-all flex-1">{demoLink}</code>
+                <Button size="sm" variant="ghost" data-testid="demo-link-copy"
+                  onClick={() => { navigator.clipboard?.writeText(demoLink); toast.success("Demo link copied"); }}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <a href={demoLink} target="_blank" rel="noreferrer" data-testid="demo-link-open"
+                className="inline-flex items-center text-sm text-primary hover:underline">
+                Open demo checkout <ExternalLink className="h-3.5 w-3.5 ml-1" />
+              </a>
+            </div>
+          )}
+          <DialogFooter>
+            {!demoLink ? (
+              <Button data-testid="demo-link-generate" onClick={createDemoLink} disabled={demoBusy || !demoAmount}>
+                {demoBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Generate demo link
+              </Button>
+            ) : (
+              <Button data-testid="demo-link-done" onClick={() => setDemoOpen(false)}>Done</Button>
             )}
           </DialogFooter>
         </DialogContent>
