@@ -1,5 +1,5 @@
 """Idempotent seeding: permissions, roles, platform admin, and a demo tenant."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from app.core.security import hash_password, verify_password
 from app.models.feature import FeatureFlag
 from app.models.finance import FeeRule
 from app.models.iam import Permission, Role, User
-from app.models.payment import PaymentProvider
+from app.models.payment import Payment, PaymentProvider
 from app.models.platform import FxRate
 from app.models.tenant import Tenant
 
@@ -168,4 +168,50 @@ async def seed(db: AsyncSession) -> None:
         for base, quote, rate in [("USD", "EUR", 0.92), ("USD", "GBP", 0.79), ("EUR", "USD", 1.09)]:
             db.add(FxRate(base_currency=base, quote_currency=quote, rate=rate, source="mock", as_of=now))
 
+    # Demo payments spread across the last ~14 days so the Overview rail-mix trend line and the
+    # 7d/30d ranges show real UPI-vs-Card movement out of the box. Idempotent on its own marker:
+    # only seeds when the demo-seed batch is absent (won't duplicate on restart or clash with
+    # other payments the tenant may already have).
+    if acme is not None:
+        existing = await db.execute(
+            select(Payment.id).where(Payment.tenant_id == acme.id,
+                                     Payment.reference.like("DEMO-%")).limit(1))
+        if existing.scalar_one_or_none() is None:
+            _seed_demo_payments(db, acme.id)
+
     await db.commit()
+
+
+def _seed_demo_payments(db: AsyncSession, tenant_id) -> None:
+    """Deterministic demo payments over the last 14 days, mixing UPI (INR) and Card (USD) rails."""
+    now = datetime.now(timezone.utc)
+    # (days_ago, rail, currency, amount_minor, status)
+    plan = [
+        (13, "card", "USD", 4500, "succeeded"), (13, "upi", "INR", 29900, "succeeded"),
+        (12, "upi", "INR", 15000, "succeeded"), (11, "card", "USD", 9900, "failed"),
+        (10, "upi", "INR", 49900, "succeeded"), (10, "card", "USD", 12000, "succeeded"),
+        (9, "upi", "INR", 9900, "succeeded"), (8, "upi", "INR", 199900, "succeeded"),
+        (7, "card", "USD", 7500, "succeeded"), (6, "upi", "INR", 25000, "succeeded"),
+        (6, "upi", "INR", 5000, "failed"), (5, "card", "USD", 15000, "succeeded"),
+        (5, "upi", "INR", 89900, "succeeded"), (4, "upi", "INR", 12500, "succeeded"),
+        (3, "card", "USD", 25000, "succeeded"), (3, "upi", "INR", 149900, "succeeded"),
+        (2, "upi", "INR", 34900, "succeeded"), (2, "upi", "INR", 9900, "succeeded"),
+        (1, "card", "USD", 5000, "succeeded"), (1, "upi", "INR", 74900, "succeeded"),
+        (0, "upi", "INR", 19900, "succeeded"), (0, "card", "USD", 8900, "succeeded"),
+    ]
+    for i, (days_ago, rail, currency, amount, status) in enumerate(plan):
+        is_upi = rail == "upi"
+        provider_key = "demo_upi" if is_upi else "mock"
+        fee = 0 if is_upi else round(amount * 0.029) + 30
+        net = amount - fee if status in ("succeeded", "captured") else 0
+        ts = now - timedelta(days=days_ago, hours=(i % 12))
+        db.add(Payment(
+            tenant_id=tenant_id, reference=f"DEMO-{i:03d}", provider_key=provider_key,
+            provider_txn_id=(f"demo_{provider_key}_{i:03d}" if status == "succeeded" else None),
+            environment="sandbox", amount_minor=amount, currency=currency,
+            fee_minor=(fee if status == "succeeded" else 0), net_minor=net, status=status,
+            description=f"Demo {rail.upper()} payment", customer_email="demo.customer@acme.test",
+            risk_score=(10 if status == "succeeded" else 55),
+            metadata_json={"method": ("upi" if is_upi else "card"), "source": "demo_seed"},
+            created_at=ts, updated_at=ts,
+        ))

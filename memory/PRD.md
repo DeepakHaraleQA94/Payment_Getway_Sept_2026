@@ -1091,3 +1091,13 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
   meaningless). Verified by temporarily backdating two payments (09-02/09-03/09-04) — the two-line
   trend rendered correctly — then reverting the created_at values. Only Overview.jsx changed.
 
+## Multi-Day Demo Payment Seed (2026-06, BACKEND seed, additive)
+- app/seed.py now seeds a spread of demo payments on the "acme" demo tenant so the Overview rail-mix
+  trend line + 7d/30d ranges show real UPI-vs-Card movement out of the box. _seed_demo_payments()
+  inserts 22 deterministic payments over the last ~14 days (14 UPI/demo_upi/INR + 8 Card/mock/USD,
+  mostly succeeded with a couple failed) with explicit created_at, metadata_json.method, and computed
+  fee/net (2.9%+30 for card, 0 for UPI). Idempotent on its own marker (reference LIKE 'DEMO-%'): seeds
+  once, won't duplicate on restart or clash with a tenant's other payments. Runs in the existing
+  startup seed (server.py). Verified: 14 upi + 8 card spread 08-22..09-04; Acme Overview trend renders
+  a full multi-day two-line chart. Only app/seed.py changed.
+
