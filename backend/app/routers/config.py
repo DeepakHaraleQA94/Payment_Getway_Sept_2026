@@ -12,7 +12,9 @@ from app.core.deps import get_current_user, require_feature, require_permission,
 from app.models.feature import FeatureFlag
 from app.models.finance import FeeRule
 from app.models.payment import Payment, PaymentProvider
+from app.models.acceptance import PaymentAcceptanceAccount
 from app.providers.base import ChargeRequest, ProviderError
+from app.providers.contracts import ProviderConfiguration
 from app.providers.registry import get_provider, has_provider, list_providers
 from app.data.currency_catalog import list_currencies
 from app.services import payment_receipt_service
@@ -203,6 +205,67 @@ async def provider_health(provider_key: str, environment: str | None = None,
     return {"provider": provider_key, **get_provider(provider_key).health_check(environment)}
 
 
+class ProviderTestConnection(BaseModel):
+    provider_key: str
+    mode: str = "sandbox"
+    credentials: dict | None = None  # ephemeral; validated in-memory, NEVER persisted or logged
+
+
+@router.post("/providers/test-connection")
+async def provider_test_connection(body: ProviderTestConnection,
+                                   user=Depends(require_permission("provider.manage"))):
+    """Test a provider/environment with the UNSAVED credentials entered in the wizard.
+
+    Generic + plugin-agnostic: builds an in-memory ProviderConfiguration from the ephemeral
+    credentials and delegates to the selected plugin's test_connection contract. Raw credentials
+    are never persisted, never logged, and never echoed back — only a safe status is returned.
+    """
+    if not has_provider(body.provider_key):
+        raise HTTPException(status_code=404, detail="Unknown provider plugin")
+    plugin = get_provider(body.provider_key)
+    if not plugin.supports_environment(body.mode):
+        raise HTTPException(status_code=400,
+                            detail=f"Provider '{body.provider_key}' does not support the '{body.mode}' environment")
+    config = ProviderConfiguration(
+        provider_key=body.provider_key, mode=body.mode, credential_ref=None,
+        options={"credentials": body.credentials} if body.credentials else {})
+    try:
+        result = plugin.test_connection(body.mode, config)
+    except ProviderError as e:
+        result = {"status": "error", "environment": body.mode, "detail": e.message}
+    # Safety: strip anything that isn't a known-safe field so no secret can leak back.
+    return {"provider": body.provider_key,
+            "status": result.get("status", "unknown"),
+            "environment": result.get("environment", body.mode),
+            "detail": result.get("detail")}
+
+
+async def _validate_acceptance_mapping(db, tid, provider_mode: str, config: dict) -> None:
+    """If the wizard mapped a Payment Acceptance Account, validate it and keep ONLY its id in config.
+
+    Never copies VPA/bank/secret into the provider config — only the existing account id reference.
+    """
+    if not config or "acceptance_account_id" not in config:
+        return
+    acc_id = config.get("acceptance_account_id")
+    if not acc_id:
+        config.pop("acceptance_account_id", None)
+        return
+    try:
+        acc = await db.get(PaymentAcceptanceAccount, uuid.UUID(str(acc_id)))
+    except (ValueError, TypeError):
+        acc = None
+    if acc is None or acc.tenant_id != tid:
+        raise HTTPException(status_code=400, detail="Acceptance account not found for this tenant")
+    if not acc.enabled:
+        raise HTTPException(status_code=400, detail="Acceptance account is disabled")
+    if acc.environment != provider_mode:
+        raise HTTPException(status_code=400,
+                            detail=f"Acceptance account environment '{acc.environment}' does not match '{provider_mode}'")
+    # Keep only the id reference — strip anything else the client may have sent under this key path.
+    config["acceptance_account_id"] = str(acc.id)
+
+
 def _require_plugin(provider_key: str):
     if not has_provider(provider_key):
         raise HTTPException(status_code=404, detail="Unknown provider")
@@ -355,6 +418,8 @@ async def add_provider(body: ProviderCreate, tenant_id: str | None = None, db: A
 
     data = body.model_dump()
     raw_credentials = data.pop("credentials", None)
+    # Validate any acceptance-account mapping and keep only the id reference in config.
+    await _validate_acceptance_mapping(db, tid, body.mode, data.get("config") or {})
     # Store any supplied credentials encrypted in the secret store; persist only the reference.
     credentials_ref = None
     if raw_credentials:

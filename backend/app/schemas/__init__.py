@@ -208,6 +208,7 @@ class ProviderOut(ORMBase):
     supported_countries: list = []
     supported_methods: list = []
     supported_flows: list = []
+    config: dict = {}
     credentials_ref: str | None = None
     created_at: datetime
 

@@ -27,6 +27,7 @@ const STEPS = [
 const EMPTY_FORM = {
   provider_key: "", display_name: "", mode: "", priority: 10, credentials: {},
   supported_currencies: [], supported_countries: [], payment_methods: [], supported_flows: [],
+  acceptance_account_id: "", live_confirmed: false,
 };
 
 function Chip({ active, onClick, children, testid }) {
@@ -151,8 +152,11 @@ export default function Providers() {
     setHealthBusy(true);
     setHealth(null);
     try {
-      const res = await api.get(`/providers/${form.provider_key}/health`, {
-        params: { environment: form.mode },
+      // Test the UNSAVED credentials the operator just entered (never persisted by this call).
+      const res = await api.post("/providers/test-connection", {
+        provider_key: form.provider_key,
+        mode: form.mode,
+        credentials: Object.keys(form.credentials).length ? form.credentials : null,
       });
       setHealth(res.data);
     } catch (e) {
@@ -186,6 +190,8 @@ export default function Providers() {
       const creds = hasCredInputs
         ? Object.fromEntries(Object.entries(form.credentials).filter(([, v]) => (v || "").trim()))
         : null;
+      // Persist ONLY the acceptance account id reference inside the provider config (no VPA/secrets).
+      const config = form.acceptance_account_id ? { acceptance_account_id: form.acceptance_account_id } : {};
       await api.post("/providers", {
         provider_key: form.provider_key,
         display_name: form.display_name || meta?.display_name || form.provider_key,
@@ -196,6 +202,7 @@ export default function Providers() {
         supported_countries: form.supported_countries,
         supported_methods: form.payment_methods,
         supported_flows: form.supported_flows,
+        config,
         credentials: creds && Object.keys(creds).length ? creds : null,
       }, { params: { tenant_id: selectedTenantId } });
       toast.success("Provider account connected");
@@ -434,23 +441,39 @@ export default function Providers() {
                       </div>
                     ) : (
                       <>
-                        <p className="text-sm text-muted-foreground">Eligible UPI acceptance accounts (VPAs) for this tenant in <span className="font-mono">{form.mode}</span>. This view is informational and is not persisted with the provider.</p>
+                        <p className="text-sm text-muted-foreground">Optionally map an eligible UPI acceptance account (VPA) for <span className="font-mono">{form.mode}</span>. Only the account reference is stored with the provider — never the VPA or any secret.</p>
                         {acceptance.length === 0 ? (
                           <EmptyState message="No acceptance accounts configured for this environment." testid="wizard-acceptance-empty" />
                         ) : (
                           <div className="space-y-2" data-testid="wizard-acceptance-list">
-                            {acceptance.map((a) => (
-                              <div key={a.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/20" data-testid={`wizard-acceptance-${a.id}`}>
-                                <div>
-                                  <p className="text-sm font-medium">{a.display_name}</p>
-                                  <p className="text-xs font-mono text-muted-foreground">{a.upi_vpa} · {a.currency} · {a.country}</p>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs">
-                                  <span className="font-mono text-muted-foreground">P{a.priority}</span>
-                                  <StatusBadge status={a.verification_status === "verified" ? "active" : "pending"} />
-                                </div>
-                              </div>
-                            ))}
+                            <button type="button" data-testid="wizard-acceptance-none"
+                              onClick={() => setForm({ ...form, acceptance_account_id: "" })}
+                              className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                                !form.acceptance_account_id ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"
+                              }`}>
+                              <span className="text-sm">No acceptance mapping</span>
+                            </button>
+                            {acceptance.filter((a) => a.enabled).map((a) => {
+                              const sel = form.acceptance_account_id === a.id;
+                              return (
+                                <button key={a.id} type="button" data-testid={`wizard-acceptance-${a.id}`}
+                                  onClick={() => setForm({ ...form, acceptance_account_id: a.id })}
+                                  className={`w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors ${
+                                    sel ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"
+                                  }`}>
+                                  <div>
+                                    <p className="text-sm font-medium flex items-center gap-1.5">
+                                      {sel && <CircleCheck className="h-3.5 w-3.5 text-primary" />}{a.display_name}
+                                    </p>
+                                    <p className="text-xs font-mono text-muted-foreground">{a.upi_vpa} · {a.currency} · {a.country}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className="font-mono text-muted-foreground">P{a.priority}</span>
+                                    <StatusBadge status={a.verification_status === "verified" ? "active" : "pending"} />
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </>
@@ -461,7 +484,7 @@ export default function Providers() {
                 {/* STEP: test */}
                 {STEPS[step].key === "test" && (
                   <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">Run a live health check against the plugin in <span className="font-mono">{form.mode}</span> before saving.</p>
+                    <p className="text-sm text-muted-foreground">Test the connection for <span className="font-mono">{form.provider_key}</span> in <span className="font-mono">{form.mode}</span> using the credentials you entered. Nothing is saved by this test.</p>
                     <Button variant="outline" data-testid="wizard-run-health" onClick={runHealth} disabled={healthBusy}>
                       {healthBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Activity className="h-4 w-4 mr-2" />}
                       Test connection
@@ -504,7 +527,8 @@ export default function Providers() {
                         ["Countries", form.supported_countries.length ? form.supported_countries.join(", ") : "inherit all"],
                         ["Methods", form.payment_methods.length ? form.payment_methods.join(", ") : "inherit all"],
                         ["Flows", form.supported_flows.length ? form.supported_flows.join(", ") : "inherit all"],
-                        ["Health check", health ? (health.status === "up" ? "healthy" : health.status) : "not run"],
+                        ["Acceptance account", form.acceptance_account_id ? (acceptance.find((a) => a.id === form.acceptance_account_id)?.display_name || form.acceptance_account_id) : (isUpi ? "none" : "n/a")],
+                        ["Connection test", health ? (health.status === "up" ? "passed" : health.status) : "not run"],
                       ].map(([k, v]) => (
                         <div key={k} className="flex items-start justify-between px-3 py-2 gap-4">
                           <dt className="text-muted-foreground">{k}</dt>
@@ -512,6 +536,14 @@ export default function Providers() {
                         </div>
                       ))}
                     </dl>
+                    {form.mode === "live" && (
+                      <label className="flex items-start gap-2 text-sm p-3 rounded-lg border border-amber-500/40 bg-amber-500/10" data-testid="wizard-live-confirm-label">
+                        <input type="checkbox" data-testid="wizard-live-confirm" className="mt-0.5"
+                          checked={form.live_confirmed}
+                          onChange={(e) => setForm({ ...form, live_confirmed: e.target.checked })} />
+                        <span className="text-amber-300">I confirm this is a LIVE provider account that will process real payments. A passing connection test is required to enable it.</span>
+                      </label>
+                    )}
                   </div>
                 )}
               </div>
@@ -528,9 +560,10 @@ export default function Providers() {
               <ChevronLeft className="h-4 w-4 mr-1" /> Back
             </Button>
             {STEPS[step].key === "review" ? (
-              <Button data-testid="wizard-save" onClick={save} disabled={busy || !credsFilled}>
+              <Button data-testid="wizard-save" onClick={save}
+                disabled={busy || !credsFilled || (form.mode === "live" && (!form.live_confirmed || health?.status !== "up"))}>
                 {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
-                Save Provider
+                {form.mode === "live" ? "Save & Enable (LIVE)" : "Save Provider"}
               </Button>
             ) : (
               <Button

@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 34 — Generic (plugin-agnostic) Provider Connect onboarding verification (backend only). Added /app/backend/tests/test_iter34_provider_connect.py with 25 targeted tests covering: dynamic plugin discovery, /providers/test-connection with unsaved credentials, non-persistence + no-secret-echo guarantees, environment gating, acceptance-account mapping (persisted valid + rejected invalid/disabled/env-mismatch/cross-tenant), secure credential binding (secret store ref only), LIVE safety on provider create, duplicate provider/env uniqueness, permission gating (provider.manage) + tenant isolation, and full plugin-agnosticism (same endpoint drives mock/demo_upi/examplepsp with zero hard-coded provider names in the endpoint logic). Also re-ran iter32 (24) + iter33 (18) regression suites. RESULT: 25/25 new + 42/42 regression = 67/67 PASS.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_provider_connect.py",
+    "/app/backend/tests/test_iter33_phase1_hardening.py",
+    "/app/backend/tests/test_iter32_regression.py",
+    "/app/test_reports/pytest/iter34.xml",
+    "/app/test_reports/pytest/iter34_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "POST /providers/test-connection (config.py:214-240) correctly builds an in-memory ProviderConfiguration and delegates to plugin.test_connection; the response is whitelisted to {provider,status,environment,detail} so no ephemeral credential value can be echoed. Verified with a secret marker that never appears in the response body.",
+    "PaymentProviderAdapter.test_connection default (base.py:138-159) validates supports_environment AND, when the plugin declares required_credentials, that they were supplied in config.options['credentials']. Returns invalid_credentials with a list of missing keys (verified for examplepsp/live — all 3 keys reported).",
+    "_validate_acceptance_mapping (config.py:243-266) correctly (a) tenant-scopes via UUID lookup + tenant_id comparison, (b) requires enabled=true, (c) requires acc.environment == provider_mode, and (d) strips everything except the id before persist. DB inspection confirmed config JSON contains ONLY {acceptance_account_id: ...} with no vpa/secret fields copied in.",
+    "add_provider (config.py:393-437) pops raw credentials from the model dump and hands them to get_secret_store().put(); only credentials_ref is set on the row; audit changes dict records has_credentials boolean, never the secret. Verified via DB dump + audit path.",
+    "Duplicate uniqueness (config.py:411-417) prevents (tenant, provider_key, mode) collisions at the app layer with a clear 400 message — verified.",
+    "Plugin-agnosticism: the endpoint code (test-connection, add_provider, _validate_acceptance_mapping) contains NO `provider_key == \"<name>\"` branches (grep confirmed). The 'demo_upi' string does appear elsewhere in config.py — but only in the inbound webhook helpers and Stripe/demo-adapter integration points, not in credential/test/save logic. Frontend Providers.jsx does hard-code 'demo_upi' twice — but ONLY for a post-save 'open demo checkout' modal + demo-link creation (lines 211, 226), NOT in the credential/test-connection/save wizard flow itself; acceptable.",
+    "Nit (report-only, non-blocking): ProviderCreate.credentials is typed as `dict | None` — a stricter schema (e.g. dict[str, str] with a maxlength on values) would improve hardening against oversized payloads. Not a defect.",
+    "Nit (report-only): the raw test-connection endpoint does not accept/require a tenant_id (correct — nothing is persisted), but that also means it's a free-form rate-limited surface for authenticated 'provider.manage' users. Existing global rate limits appear sufficient; no action recommended."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter34_provider_connect.py"],
+  "success_rate": { "backend": "100% (67/67 — 25 new + 42 regression)", "frontend": "N/A (skipped per request)" },
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (Super Admin); ops-admin@cloudpay.io / same password (non-superadmin for 403 tests).",
+  "seed_data_creation": "All test rows use TEST_ prefix and are cleaned up in a `finally` block within each test. Temporarily disabled/re-enabled the acme sandbox UPI acceptance account (id cde3b53a-...) for the disabled-account rejection test — restored in the same test. No production/seeded data left mutated. GET /providers on acme + captest shows a clean state post-run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase-1 Provider Connect finalization independently verified. 25 new cases in /app/backend/tests/test_iter34_provider_connect.py: TestDynamicDiscovery x4, TestTestConnection x8 (including no-persist + no-secret-echo), TestAcceptanceMapping x5 (valid, random, wrong-env, disabled, cross-tenant), TestSecureCredentialBinding x1, TestLiveSafety x1, TestDuplicateProvider x1, TestPermissionIsolation x3, TestPluginAgnostic x2 (drive-all-plugins-via-metadata + grep-config.py). All 42 iter32+iter33 tests still pass. A brand-new compatible plugin can be onboarded end-to-end via the same endpoints purely from its metadata — the TestPluginAgnostic::test_all_reference_plugins_go_through_same_endpoint case programmatically fetches /providers/available and drives test-connection for every registered plugin with credentials synthesized from required_credentials — zero code changes required.",
+  "plugin_agnostic_confirmation": "YES — verified. A brand-new plugin implementing PaymentProviderAdapter and registering itself in app.providers.registry with proper metadata (supported_environments, required_credentials, etc.) is immediately usable via GET /providers/available, POST /providers/test-connection, and POST /providers with no backend changes and no provider-specific branch in the endpoint layer. Grep confirmed no `body.provider_key == \"...\"` checks in config.py's onboarding logic.",
+  "rca of the issue": "N/A — no defects found."
+}

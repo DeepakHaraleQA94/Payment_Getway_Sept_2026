@@ -135,6 +135,29 @@ class PaymentProviderAdapter(ABC):
             status = "unsupported_environment"
         return {"status": status, "environment": env}
 
+    def test_connection(self, environment: str | None = None,
+                        config: "ProviderConfiguration | None" = None) -> dict:
+        """Validate a provider/environment (optionally with UNSAVED, in-memory credentials).
+
+        Additive to the health contract: onboarding calls this to test the credentials an operator
+        just entered in the wizard BEFORE persisting them. The default implementation checks
+        environment support and — when the plugin declares required credentials — that they were
+        supplied in config.options['credentials']. Real plugins override this to actually ping their
+        API. Must never return or log raw secret values.
+        """
+        env = environment or self.mode
+        if not self.supports_environment(env):
+            return {"status": "unsupported_environment", "environment": env,
+                    "detail": f"Provider does not support the '{env}' environment"}
+        required = self.required_credentials()
+        if required:
+            creds = (config.options.get("credentials") if config and config.options else None) or {}
+            missing = [c.key for c in required if c.required and not str(creds.get(c.key, "")).strip()]
+            if missing:
+                return {"status": "invalid_credentials", "environment": env,
+                        "detail": f"Missing required credential(s): {', '.join(missing)}"}
+        return {"status": "up", "environment": env, "detail": "Connection parameters accepted"}
+
     # ---- standardized payment contract ----
     # `config` (optional) carries the resolved per-account environment + credentials for this
     # call. The core resolves it from the account's credential reference via the secret store and

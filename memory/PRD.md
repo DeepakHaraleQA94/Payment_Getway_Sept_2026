@@ -1152,3 +1152,27 @@ Minimal additive fixes for the audit's production blockers (no system reimplemen
 - Tests: iteration_33 — 42/42 PASS (18 new hardening + 24 iter32 regression re-run, no regressions).
   New file /app/backend/tests/test_iter33_phase1_hardening.py.
 
+## Generic Provider Connect Onboarding — Finalized (iteration_34, 2026-06)
+Made the Provider Connect Wizard fully plugin-agnostic end-to-end; reused all existing systems.
+- Test Connection (unsaved creds): NEW ProviderAdapter.test_connection(environment, config) on the
+  base contract (default: env-support + required-credential presence; plugins may override to ping).
+  NEW POST /api/providers/test-connection (provider.manage) builds an in-memory ProviderConfiguration
+  from the ephemeral credentials the operator entered and calls the plugin — never persists/logs/echoes
+  secrets; returns only {provider,status,environment,detail}.
+- Acceptance mapping now PERSISTED (supersedes the earlier display-only choice): POST /api/providers
+  validates config.acceptance_account_id (exists, tenant-owned, enabled, environment matches) via
+  _validate_acceptance_mapping and stores ONLY the id reference in PaymentProvider.config — never
+  VPA/bank/secret. Invalid/disabled/env-mismatch/cross-tenant -> 400.
+  ProviderOut now exposes config.
+- Frontend Providers.jsx wizard: acceptance step selectable (wizard-acceptance-none / -{id}) persisting
+  form.acceptance_account_id + config; Test step calls the new endpoint with entered credentials;
+  Review shows acceptance + connection result; LIVE save gated behind an explicit confirm checkbox
+  (wizard-live-confirm) AND a passing connection test. Single flow — no second connection path.
+- Plugin-agnostic: no provider-specific branches; credential fields, environments, capabilities and
+  test all derive from plugin metadata (/providers/available). A brand-new compatible plugin onboards
+  through the same wizard with zero hard-coded credential fields.
+- Files: app/providers/base.py, app/routers/config.py, app/schemas/__init__.py,
+  frontend/src/pages/Providers.jsx. No new tables/migration (reused PaymentProvider.config).
+- Tests: iteration_34 — 67/67 PASS (25 new generic-onboarding + 42 regression re-run, no defects).
+  New file /app/backend/tests/test_iter34_provider_connect.py.
+
