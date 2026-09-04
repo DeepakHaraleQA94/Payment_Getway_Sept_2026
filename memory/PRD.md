@@ -1041,3 +1041,12 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
 - No migration/frontend change. Verified via curl: reconciliation export shows method=upi per line +
   breakdown (upi,6); finance report shows METHOD BREAKDOWN card 1/₹50, upi 6/₹2328.50.
 
+
+## Reconciliation Download CSV button (2026-06, FRONTEND-ONLY, additive)
+- Reconciliation.jsx detail dialog now has a "Download CSV" button (reconciliation-download-csv) that
+  calls downloadCsv on GET /api/reconciliation/runs/{id}/export.csv (the rail-split export), passing
+  tenant_id and the currently-selected outcome filter so the download matches the on-screen view.
+  Filename reconciliation_{run_ref||id}.csv; guarded to render only when a run detail is open.
+- Verified via Playwright: button present, download fired (reconciliation_RAILTEST1.csv). Only
+  frontend/src/pages/Reconciliation.jsx changed.
+

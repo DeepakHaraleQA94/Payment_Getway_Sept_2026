@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { GitCompareArrows, Upload, FileDown, ShieldAlert, RefreshCw } from "lucide-react";
+import { GitCompareArrows, Upload, FileDown, ShieldAlert, RefreshCw, Download } from "lucide-react";
 import { toast } from "sonner";
-import { api, money, formatApiError } from "@/lib/api";
+import { api, money, formatApiError, downloadCsv } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader, Panel, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -256,6 +256,16 @@ export default function Reconciliation() {
             </>
           )}
           <DialogFooter>
+            {detail && (
+              <Button variant="outline" data-testid="reconciliation-download-csv"
+                onClick={() => downloadCsv(
+                  `/reconciliation/runs/${detail.run.id}/export.csv`,
+                  { tenant_id: selectedTenantId, ...(filter ? { outcome: filter } : {}) },
+                  `reconciliation_${detail.run.run_ref || detail.run.id}.csv`,
+                ).catch((e) => toast.error(formatApiError(e.response?.data?.detail)))}>
+                <Download className="h-4 w-4 mr-2" /> Download CSV
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setDetail(null)} data-testid="reconciliation-detail-close">Close</Button>
           </DialogFooter>
         </DialogContent>
