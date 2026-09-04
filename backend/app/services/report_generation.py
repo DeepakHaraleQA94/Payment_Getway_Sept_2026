@@ -133,6 +133,21 @@ async def generate_report(db: AsyncSession, *, tenant: Tenant, report_type: str 
     for s in settlements:
         w.writerow([s.reference, s.status, _fmt(s.gross_minor), _fmt(s.fees_minor), _fmt(s.net_minor),
                     s.currency, s.txn_count, s.created_at.isoformat()])
+    # Method breakdown so payouts can be split by rail (UPI vs Card) across the report's payments.
+    w.writerow([])
+    w.writerow(["METHOD BREAKDOWN"])
+    w.writerow(["method", "count", "gross", "fees", "net"])
+    _mb: dict[str, list[int]] = {}
+    for p in payments:
+        _m = str((p.metadata_json or {}).get("method") or ("upi" if p.provider_key == "demo_upi" else "card")).lower()
+        _m = "upi" if "upi" in _m else "card"
+        agg = _mb.setdefault(_m, [0, 0, 0, 0])
+        agg[0] += 1
+        agg[1] += p.amount_minor or 0
+        agg[2] += p.fee_minor or 0
+        agg[3] += p.net_minor or 0
+    for _m, agg in sorted(_mb.items()):
+        w.writerow([_m, agg[0], _fmt(agg[1]), _fmt(agg[2]), _fmt(agg[3])])
     content = buf.getvalue().encode("utf-8")
 
     filename = f"cloudpay_{report_type}_{tenant.slug}_{win_start.date().isoformat()}.csv"

@@ -1028,3 +1028,16 @@ Two additive enhancements; backend change limited to surfacing refund provider_k
 - Verified via curl: payments.csv header now id,reference,provider,method,... with method=card for mock
   and method=upi for demo_upi rows; scheduled daily run generates cleanly (7 payments, file_id returned).
 
+
+## Method Breakdown in Settlement/Reconciliation Exports (2026-06, additive, backend-only)
+Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
+- Reconciliation CSV export: NEW GET /api/reconciliation/runs/{run_id}/export.csv (reconciliation.view,
+  tenant-isolated, outcome filter) — per-line items with a `method` column resolved from each item's
+  linked payment (batch Payment lookup; _pm_from_payment: metadata.method normalized to upi/card,
+  fallback demo_upi->upi else card) plus a trailing "METHOD BREAKDOWN" (method, line_count).
+- Finance report (report_generation.py, scheduled/on-demand daily/weekly/monthly/custom + emailed CSV):
+  added a "METHOD BREAKDOWN" section after SETTLEMENTS aggregating the report's payments by method
+  (count, gross, fees, net per upi/card).
+- No migration/frontend change. Verified via curl: reconciliation export shows method=upi per line +
+  breakdown (upi,6); finance report shows METHOD BREAKDOWN card 1/₹50, upi 6/₹2328.50.
+

@@ -3,6 +3,7 @@ import csv
 import io
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,7 @@ from app.core.audit import record_audit
 from app.core.database import get_db
 from app.core.deps import require_permission, resolve_tenant_id
 from app.models.finance import ReconciliationItem, ReconciliationRun
+from app.models.payment import Payment
 from app.services import reconciliation_engine
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
@@ -121,3 +123,54 @@ async def run_detail(run_id: str, tenant_id: str | None = None, outcome: str | N
         q = q.where(ReconciliationItem.outcome == outcome)
     items = (await db.execute(q.order_by(ReconciliationItem.outcome).limit(2000))).scalars().all()
     return {"run": _run_out(run), "items": [_item_out(i) for i in items]}
+
+
+def _pm_from_payment(p) -> str:
+    if p is None:
+        return "unknown"
+    m = str((p.metadata_json or {}).get("method") or ("upi" if p.provider_key == "demo_upi" else "card")).lower()
+    return "upi" if "upi" in m else "card"
+
+
+@router.get("/runs/{run_id}/export.csv")
+async def export_run(run_id: str, tenant_id: str | None = None, outcome: str | None = None,
+                     db: AsyncSession = Depends(get_db),
+                     user=Depends(require_permission("reconciliation.view"))):
+    """Per-line reconciliation export with a payment-method column (split payouts by rail)."""
+    tid = resolve_tenant_id(user, tenant_id)
+    run = await db.get(ReconciliationRun, run_id)
+    if not run or (not user.is_superadmin and run.tenant_id != user.tenant_id):
+        raise HTTPException(status_code=404, detail="Reconciliation run not found")
+    if not user.is_superadmin and tid is not None and run.tenant_id != tid:
+        raise HTTPException(status_code=404, detail="Reconciliation run not found")
+    q = select(ReconciliationItem).where(ReconciliationItem.run_id == run.id)
+    if outcome:
+        q = q.where(ReconciliationItem.outcome == outcome)
+    items = (await db.execute(q.order_by(ReconciliationItem.outcome).limit(5000))).scalars().all()
+    # Resolve method for each linked payment (one lookup batch).
+    pids = [i.payment_id for i in items if i.payment_id]
+    pmap = {}
+    if pids:
+        prows = (await db.execute(select(Payment).where(Payment.id.in_(pids)))).scalars().all()
+        pmap = {p.id: p for p in prows}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["outcome", "method", "provider_txn_id", "reference", "provider_amount", "internal_amount",
+                "currency", "provider_status", "internal_status", "detail"])
+    breakdown = {}
+    for i in items:
+        method = _pm_from_payment(pmap.get(i.payment_id))
+        breakdown[method] = breakdown.get(method, 0) + 1
+        w.writerow([
+            i.outcome, method, i.provider_txn_id or "", i.reference or "",
+            f"{(i.provider_amount_minor or 0) / 100:.2f}", f"{(i.internal_amount_minor or 0) / 100:.2f}",
+            i.currency or "", i.provider_status or "", i.internal_status or "", i.detail or "",
+        ])
+    w.writerow([])
+    w.writerow(["METHOD BREAKDOWN"])
+    w.writerow(["method", "line_count"])
+    for method, count in sorted(breakdown.items()):
+        w.writerow([method, count])
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+                             headers={"Content-Disposition": f'attachment; filename="reconciliation_{run.run_ref or run_id}.csv"'})
