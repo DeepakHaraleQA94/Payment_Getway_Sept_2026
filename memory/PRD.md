@@ -1107,3 +1107,20 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
   legend; "UPI share %" = single line, Y-axis fixed 0-100 with % formatting and % tooltip. Verified
   on Acme: share mode renders the UPI-share line fluctuating across 08-22..09-04. Only Overview.jsx.
 
+## Production-Readiness Regression (iteration_32, 2026-06)
+- Backend regression 24/24 PASS (test_iter32_regression.py) across AUTH/RBAC, tenant isolation,
+  payment idempotency (claim-before-dispatch), fee+ledger on success, refund cap+row-lock,
+  reversal, outbound webhooks (HMAC sign/retry/replay-preserves-event_id), inbound provider webhook
+  (idempotent/state-guarded/no-duplicate-ledger), currency catalog auth-gate, demo UPI success vs
+  simulated, reconciliation export (method + breakdown) + tenant isolation, refunds provider_key,
+  reports CSV method column. No defects.
+- DOCUMENTED PRODUCTION GAP (report-only, NOT fixed — no shipped provider is affected): inbound
+  provider webhook (config.py provider_inbound_webhook, ~L260-311) reconciles pending->succeeded via
+  the state machine but does NOT compute fee/net or post a ledger credit (the synchronous charge flow
+  owns money). Safe for mock/demo_upi (synchronous). A FUTURE real ASYNC provider (create=pending,
+  webhook confirms success) would leave fee_minor/net_minor unset and the ledger un-credited. Fix when
+  a real async provider is integrated: on non-terminal->success in the webhook, compute_fee +
+  post_entry guarded by an existing-credit check (mirror capture_payment) to stay idempotent.
+- No application code/schema changed in this audit; only /app/backend/tests/test_iter32_regression.py
+  added and TEST_-prefixed rows created on the CapTest tenant (demo/acme data untouched).
+
