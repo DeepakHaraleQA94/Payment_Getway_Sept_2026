@@ -32,6 +32,7 @@ export default function Overview() {
   const [allPayments, setAllPayments] = useState([]);
   const [succeededOnly, setSucceededOnly] = useState(false);
   const [rangeDays, setRangeDays] = useState(0); // 0 = all time
+  const [trendMode, setTrendMode] = useState("count"); // count | share
   const tenant = tenants.find((t) => t.id === selectedTenantId);
   const currency = tenant?.default_currency || "USD";
 
@@ -82,7 +83,10 @@ export default function Overview() {
       });
     return Object.values(buckets)
       .sort((a, b) => a.day.localeCompare(b.day))
-      .map((b) => ({ name: b.day.slice(5), upi: b.upi, card: b.card }));
+      .map((b) => {
+        const total = b.upi + b.card;
+        return { name: b.day.slice(5), upi: b.upi, card: b.card, share: total ? Math.round((b.upi / total) * 100) : 0 };
+      });
   }, [allPayments, succeededOnly, rangeDays]);
 
   useEffect(() => { load(); }, [load]);
@@ -186,18 +190,42 @@ export default function Overview() {
               )}
               {railTrend.length >= 2 && (
                 <div className="mt-6 pt-5 border-t border-border" data-testid="rail-mix-trend">
-                  <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-3">
-                    UPI vs Card trend {rangeDays ? `(last ${rangeDays}d)` : ""}
-                  </p>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+                      UPI vs Card trend {rangeDays ? `(last ${rangeDays}d)` : ""}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      {[["count", "Counts"], ["share", "UPI share %"]].map(([m, label]) => (
+                        <button key={m} type="button" data-testid={`rail-mix-trend-mode-${m}`}
+                          onClick={() => setTrendMode(m)}
+                          className={`text-xs font-mono px-2 py-1 rounded-md border transition-colors ${
+                            trendMode === m
+                              ? "bg-primary/20 border-primary/60 text-primary"
+                              : "bg-secondary/40 border-border text-muted-foreground hover:border-primary/40"
+                          }`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <ResponsiveContainer width="100%" height={150}>
                     <LineChart data={railTrend} margin={{ left: -18, right: 8, top: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(217 33% 17%)" vertical={false} />
                       <XAxis dataKey="name" stroke="hsl(215 20% 65%)" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis stroke="hsl(215 20% 65%)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                      <Tooltip contentStyle={{ background: "hsl(221 39% 11%)", border: "1px solid hsl(217 33% 17%)", borderRadius: 8, fontSize: 12 }} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="upi" name="UPI" stroke="hsl(217 91% 60%)" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="card" name="Card" stroke="hsl(239 84% 74%)" strokeWidth={2} dot={false} />
+                      <YAxis stroke="hsl(215 20% 65%)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false}
+                        domain={trendMode === "share" ? [0, 100] : undefined}
+                        tickFormatter={trendMode === "share" ? (v) => `${v}%` : undefined} />
+                      <Tooltip contentStyle={{ background: "hsl(221 39% 11%)", border: "1px solid hsl(217 33% 17%)", borderRadius: 8, fontSize: 12 }}
+                        formatter={trendMode === "share" ? (v) => [`${v}%`, "UPI share"] : undefined} />
+                      {trendMode === "share" ? (
+                        <Line type="monotone" dataKey="share" name="UPI share %" stroke="hsl(217 91% 60%)" strokeWidth={2} dot={false} />
+                      ) : (
+                        <>
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="upi" name="UPI" stroke="hsl(217 91% 60%)" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="card" name="Card" stroke="hsl(239 84% 74%)" strokeWidth={2} dot={false} />
+                        </>
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

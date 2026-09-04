@@ -1101,3 +1101,9 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
   startup seed (server.py). Verified: 14 upi + 8 card spread 08-22..09-04; Acme Overview trend renders
   a full multi-day two-line chart. Only app/seed.py changed.
 
+## Rail Trend UPI Share Toggle (2026-06, FRONTEND-ONLY, additive)
+- Overview.jsx trend chart gained a mode toggle (rail-mix-trend-mode-count / -share). railTrend now
+  also computes daily `share` = round(upi/(upi+card)*100). "Counts" = two lines (UPI + Card) with
+  legend; "UPI share %" = single line, Y-axis fixed 0-100 with % formatting and % tooltip. Verified
+  on Acme: share mode renders the UPI-share line fluctuating across 08-22..09-04. Only Overview.jsx.
+
