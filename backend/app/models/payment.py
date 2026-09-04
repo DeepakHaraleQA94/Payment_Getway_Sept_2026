@@ -124,6 +124,10 @@ class Payment(UUIDPkMixin, TimestampMixin, AuditMixin, Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_key: Mapped[str] = mapped_column(String(60), nullable=False, default="mock")
     provider_txn_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # Explicit rail + flow carried through the payment lifecycle (authoritative; not inferred from
+    # provider_key). payment_method e.g. card|upi|wallet|bank; flow e.g. direct|intent|qr|authorize.
+    payment_method: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    flow: Mapped[str | None] = mapped_column(String(20), nullable=True)
     environment: Mapped[str] = mapped_column(String(20), nullable=False, default="sandbox")  # sandbox|live
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)  # amount in minor units
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")

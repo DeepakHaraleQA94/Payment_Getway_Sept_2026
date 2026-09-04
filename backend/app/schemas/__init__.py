@@ -235,6 +235,8 @@ class PaymentOut(ORMBase):
     provider_key: str
     provider_txn_id: str | None
     environment: str
+    payment_method: str | None = None
+    flow: str | None = None
     amount_minor: int
     currency: str
     fee_minor: int

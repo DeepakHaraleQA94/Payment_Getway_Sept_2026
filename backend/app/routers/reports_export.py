@@ -16,7 +16,9 @@ router = APIRouter(prefix="/api/reports/export", tags=["reports"])
 
 
 def _payment_method(p) -> str:
-    m = str((p.metadata_json or {}).get("method") or ("upi" if p.provider_key == "demo_upi" else "card")).lower()
+    m = str(p.payment_method or (p.metadata_json or {}).get("method") or "").lower()
+    if not m:
+        m = "upi" if p.provider_key == "demo_upi" else "card"
     return "upi" if "upi" in m else "card"
 
 

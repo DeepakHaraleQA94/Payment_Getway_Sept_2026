@@ -1124,3 +1124,31 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
 - No application code/schema changed in this audit; only /app/backend/tests/test_iter32_regression.py
   added and TEST_-prefixed rows created on the CapTest tenant (demo/acme data untouched).
 
+## Real-Provider Readiness Hardening — Phase 1 (iteration_33, 2026-06)
+Minimal additive fixes for the audit's production blockers (no system reimplemented):
+- GAP1 async ledger: payment_engine.ensure_success_credit() (reuses fee_engine + ledger_service +
+  the capture_payment _existing_payment_credit==0 idempotent guard). Called by config.py
+  provider_inbound_webhook when a payment reconciles into a success state — posts fee/net + ONE
+  ledger credit exactly once; duplicate/sync-already-credited paths no-op. Verified: pending->webhook
+  succeeded => 1 credit == net (fee 610/net 19390); duplicate => 'already', no 2nd credit.
+- GAP2 explicit method/flow: added persisted Payment.payment_method + Payment.flow columns (Alembic
+  c1a2b3d4e5f6, backfilled from metadata_json; legacy heuristic applied once at migration). Populated
+  at create-time, exposed on PaymentOut, and made reconciliation._pm_from_payment /
+  reports_export._payment_method / report_generation authoritative on the column (metadata fallback
+  legacy-only). No provider_key guessing for new payments.
+- GAP3 live safety: create_payment now also rejects LIVE when the plugin declares required_credentials
+  but the account has no credentials_ref (in addition to the existing configured+enabled-account and
+  supports_environment rules). LIVE-via-demo_upi already blocked (sandbox-only). Verified 400s for
+  demo_upi/live, examplepsp/live-no-account, examplepsp/live-no-credentials.
+- GAP4 webhook safety + GAP5 plugin contract: verified sufficient — signature/env verification
+  delegated to plugin, malformed->400, unmatched txn, unknown provider->404, state-guarded, single
+  financial mutation, audited (ledger_credit_posted). Contract (create/status/refund/capture/void/
+  intent/qr/verify_callback/reconcile/health/capabilities/env/credentials) confirmed complete. No code
+  change for GAP4/GAP5.
+- Files changed: app/models/payment.py, app/services/payment_engine.py, app/routers/config.py,
+  app/schemas/__init__.py, app/routers/reconciliation.py, app/routers/reports_export.py,
+  app/services/report_generation.py, new migration c1a2b3d4e5f6. DB: +payments.payment_method,
+  +payments.flow (nullable, backfilled).
+- Tests: iteration_33 — 42/42 PASS (18 new hardening + 24 iter32 regression re-run, no regressions).
+  New file /app/backend/tests/test_iter33_phase1_hardening.py.
+

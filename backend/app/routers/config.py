@@ -28,6 +28,7 @@ from app.schemas import (
     ProviderUpdate,
 )
 from app.services import payment_state
+from app.services import payment_engine
 from app.services import alert_service
 from app.services import provider_health as provider_health_svc
 from app.services.secret_store import get_secret_store
@@ -300,11 +301,17 @@ async def provider_inbound_webhook(provider_key: str, request: Request,
 
     payment_state.validate_transition(prev, event.normalized_status)
     payment.status = event.normalized_status
+    # Asynchronous providers confirm success via webhook (create returned a non-terminal state):
+    # post the fee/net + ledger credit exactly once here. Idempotent — no-op if the synchronous
+    # charge flow already credited this payment, and duplicate webhooks (same status) return early
+    # above before reaching this point.
+    credited = await payment_engine.ensure_success_credit(db, payment=payment)
     await record_audit(db, action="payment.webhook_reconcile", resource_type="payment",
                        resource_id=payment.id, tenant_id=payment.tenant_id, actor_id=None,
                        actor_email=f"{provider_key}:webhook",
                        changes={"previous_state": prev, "new_state": event.normalized_status,
-                                "event_type": event.event_type, "correlation_id": str(payment.id)})
+                                "event_type": event.event_type, "ledger_credit_posted": credited,
+                                "correlation_id": str(payment.id)})
     # Customer receipt when a payment reconciles to a final success (idempotent, best-effort).
     await payment_receipt_service.send_payment_receipt(db, payment=payment)
     await db.commit()

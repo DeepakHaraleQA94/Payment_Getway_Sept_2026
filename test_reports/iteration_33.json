@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 33 — Phase-1 real-provider hardening verification (backend only). Added /app/backend/tests/test_iter33_phase1_hardening.py with 18 targeted tests + re-ran the full iter32 regression suite (24 tests). Result: 42/42 PASS. GAP1 verified via a directly-INSERTed pending payment on acme (20000 USD, provider_txn_id=ASYNC_*): POST /providers/mock/webhook with status=succeeded computed fee=610 + net=19390, posted EXACTLY ONE ledger credit==net_minor, and set payment.fee_minor/net_minor accordingly; duplicate webhook returned {already:'succeeded'} and did NOT add a second credit; a synchronous mock payment did NOT get a second credit when a matching success webhook was fired afterward. GAP2 verified: payment_method='card'/flow='direct' persisted + echoed on OUT + reflected in reports/payments.csv (method col) and reconciliation run_detail.method_summary; demo_upi payments persist method='upi'. GAP3 verified: LIVE demo_upi rejected 400 (sandbox-only), LIVE examplepsp with no account rejected 400 ('no live provider account'), LIVE examplepsp with account but no credentials rejected 400 ('no live credentials configured'). GAP4: malformed webhook body -> 400, unknown provider_txn_id -> {unmatched:true}, unknown provider_key -> 404. Unsupported capability (JPY on mock) rejected 400. Tenant isolation (ops-admin cross-tenant) confirmed 403/404. Demo UPI success + failed outcomes still work end-to-end.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_phase1_hardening.py",
+    "/app/backend/tests/test_iter32_regression.py",
+    "/app/test_reports/pytest/iter33_phase1.xml",
+    "/app/test_reports/pytest/iter33_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "payment_engine.ensure_success_credit correctly reuses fee_engine.compute_fee + ledger_service.post_entry with the _existing_payment_credit==0 idempotency guard, mirroring capture_payment. Verified end-to-end on the ASYNC path (pending → webhook succeeded → 1 credit == net_minor) AND that the sync path is not double-credited. Clean.",
+    "config.py provider_inbound_webhook: the {already: prev} short-circuit is reached BEFORE ensure_success_credit runs, which is the correct order — a duplicate success webhook can never trigger a second credit because the payment state is already terminal at that point. Reconfirmed.",
+    "GAP3 LIVE credential guard uses `provider.required_credentials()` (list-truthy) + `account.credentials_ref` — the truthy check works for both empty-list plugins (no guard) and populated declarations (guard active). Verified with examplepsp (declares 3 required credential fields) both with and without credentials_ref.",
+    "GAP2 payment_method column is now the authoritative source; the metadata_json 'method' fallback in reconciliation._pm_from_payment and reports_export._payment_method is legacy-only. Confirmed reconciliation method_summary reports both 'card' and 'upi' correctly from persisted values (not provider_key guessing).",
+    "Nit (report-only, not blocking): _insert_pending_payment in tests had to generate its own UUID because the payments.id column has no server-side default (SQLAlchemy generates it in Python). Not a defect — just something to remember if anyone bypasses the ORM. Adding `DEFAULT gen_random_uuid()` at DB level would harden this belt-and-suspenders."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter33_phase1_hardening.py"],
+  "success_rate": { "backend": "100% (42/42 — 18 phase-1 + 24 iter32 regression)", "frontend": "N/A (skipped per request)" },
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (Super Admin); ops-admin@cloudpay.io / same password (non-superadmin for isolation tests).",
+  "seed_data_creation": "Inserted one ASYNC_TEST_-prefixed pending payment on acme (used for GAP1 verification, cleaned up post-run via cascading fixture). Created several TEST_-prefixed synchronous mock/demo_upi payments on captest for GAP2 checks. Briefly configured an examplepsp/live provider account (no credentials) on captest and deleted it in the same test's finally block. No production/seeded data modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase-1 hardening (GAP1-4) all verified independently and no regression from the schema+engine changes. 42/42 backend tests passing against the public preview URL. Key files: /app/backend/tests/test_iter33_phase1_hardening.py (new, 18 cases: TestAsyncWebhookCredit x3, TestPaymentMethodFlowPersistence x4, TestLiveSafety x3, TestUnsupportedCapability x1, TestInvalidWebhook x3, TestTenantIsolation x2, TestDemoUpiStillWorks x2) and /app/backend/tests/test_iter32_regression.py (24 cases, unchanged, still 24/24). Direct DB access used for GAP1 (psycopg2) — DSN 'host=localhost dbname=cloudpay user=cloudpay password=cloudpay_local_pwd'. Acme tenant has the mock/USD fee rule (2.9%+30) needed to verify non-zero fee computation; captest has no fee rules.",
+  "rca of the issue": "N/A — no defects found. Phase-1 additive fixes work exactly as designed: async webhook path posts a single credit only when no prior credit exists (idempotent guard), and the persisted payment_method/flow columns are authoritative for reconciliation and reports."
+}

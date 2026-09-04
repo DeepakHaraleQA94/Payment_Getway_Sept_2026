@@ -113,6 +113,10 @@ async def create_payment(
         # can move by default). SANDBOX stays permissive for the dev/reference provider.
         if environment == "live" and account is None:
             raise ValueError(f"No live provider account configured for '{provider_key}'")
+        # LIVE also requires valid secure credentials whenever the plugin declares it needs them
+        # (never dispatch a live charge with missing/empty credentials).
+        if environment == "live" and provider.required_credentials() and not getattr(account, "credentials_ref", None):
+            raise ValueError(f"No live credentials configured for '{provider_key}'")
         # Capability enforcement: never route a payment to a provider that does not support its
         # country, currency, payment method or flow — even when explicitly selected.
         if account is not None:
@@ -152,6 +156,8 @@ async def create_payment(
         environment=environment,
         amount_minor=amount_minor,
         currency=currency,
+        payment_method=payment_method,
+        flow=flow,
         status="pending",
         description=description,
         customer_email=customer_email,
@@ -322,6 +328,34 @@ async def _existing_payment_credit(db, tenant_id, payment_id) -> int:
         select(func.coalesce(func.sum(LedgerEntry.amount_minor), 0)).where(
             LedgerEntry.tenant_id == tenant_id, LedgerEntry.ref_type == "payment",
             LedgerEntry.ref_id == payment_id, LedgerEntry.direction == "credit"))).scalar_one()
+
+
+SUCCESS_STATES = ("succeeded", "captured")
+
+
+async def ensure_success_credit(db, *, payment: Payment) -> bool:
+    """Compute fee/net and post the payment's ledger credit exactly once.
+
+    Used by the ASYNCHRONOUS inbound-provider-webhook path when a payment reconciles from a
+    non-terminal state into a final success state (create returned pending, the provider confirms
+    later). Reuses the EXISTING fee engine + ledger service and the same idempotent guard as
+    capture_payment (_existing_payment_credit == 0), so it never posts a duplicate credit for
+    synchronous providers that already credited at charge time. Returns True if a credit was posted.
+    """
+    if payment.status not in SUCCESS_STATES:
+        return False
+    if await _existing_payment_credit(db, payment.tenant_id, payment.id) > 0:
+        return False
+    fee = await fee_engine.compute_fee(
+        db, tenant_id=payment.tenant_id, amount_minor=payment.amount_minor,
+        currency=payment.currency, provider_key=payment.provider_key)
+    payment.fee_minor = fee
+    payment.net_minor = payment.amount_minor - fee
+    await ledger_service.post_entry(
+        db, tenant_id=payment.tenant_id, currency=payment.currency, direction="credit",
+        amount_minor=payment.net_minor, ref_type="payment", ref_id=payment.id,
+        description=f"Payment {payment.reference}")
+    return True
 
 
 async def capture_payment(
