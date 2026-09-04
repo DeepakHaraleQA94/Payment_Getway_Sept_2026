@@ -31,6 +31,7 @@ export default function Overview() {
   const [payments, setPayments] = useState([]);
   const [allPayments, setAllPayments] = useState([]);
   const [succeededOnly, setSucceededOnly] = useState(false);
+  const [rangeDays, setRangeDays] = useState(0); // 0 = all time
   const tenant = tenants.find((t) => t.id === selectedTenantId);
   const currency = tenant?.default_currency || "USD";
 
@@ -50,8 +51,10 @@ export default function Overview() {
 
   const railByCurrency = useMemo(() => {
     const byCcy = {};
+    const cutoff = rangeDays ? Date.now() - rangeDays * 86400000 : 0;
     allPayments
       .filter((x) => !succeededOnly || ["succeeded", "captured"].includes(x.status))
+      .filter((x) => !cutoff || new Date(x.created_at).getTime() >= cutoff)
       .forEach((x) => {
         const ccy = (x.currency || "USD").toUpperCase();
         const m = String((x.metadata && x.metadata.method) || (x.provider_key === "demo_upi" ? "upi" : "card")).toLowerCase();
@@ -61,7 +64,7 @@ export default function Overview() {
         byCcy[ccy][rail].amount += x.amount_minor || 0;
       });
     return byCcy;
-  }, [allPayments, succeededOnly]);
+  }, [allPayments, succeededOnly, rangeDays]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -90,6 +93,19 @@ export default function Overview() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-heading text-lg font-medium">Payment Mix by Rail</h3>
                 <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1" data-testid="rail-mix-range">
+                    {[[0, "All"], [7, "7d"], [30, "30d"]].map(([d, label]) => (
+                      <button key={d} type="button" data-testid={`rail-mix-range-${d}`}
+                        onClick={() => setRangeDays(d)}
+                        className={`text-xs font-mono px-2 py-1 rounded-md border transition-colors ${
+                          rangeDays === d
+                            ? "bg-primary/20 border-primary/60 text-primary"
+                            : "bg-secondary/40 border-border text-muted-foreground hover:border-primary/40"
+                        }`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <button
                     type="button"
                     data-testid="rail-mix-succeeded-toggle"
@@ -105,7 +121,7 @@ export default function Overview() {
                 </div>
               </div>
               {currencies.length === 0 ? (
-                <EmptyState message={succeededOnly ? "No succeeded payments to break down by rail." : "No payments yet to break down by rail."} testid="rail-mix-empty" />
+                <EmptyState message={(succeededOnly || rangeDays) ? "No payments match the current filters." : "No payments yet to break down by rail."} testid="rail-mix-empty" />
               ) : (
                 <div className="space-y-5">
                   {currencies.map((ccy) => {

@@ -1076,3 +1076,10 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
   state. Verified: ALL = 7 payments (INR 6 + USD 1); Succeeded only = 6 payments (USD refunded row
   dropped, INR block remains). Only frontend/src/pages/Overview.jsx changed.
 
+## Rail Mix Time Range (2026-06, FRONTEND-ONLY, additive)
+- Overview.jsx rail mix gained a time-range selector (rail-mix-range: rail-mix-range-0/-7/-30 = All/
+  7d/30d) folded into the same useMemo (cutoff = now - rangeDays*86400000, on created_at). Works with
+  the succeeded-only toggle; empty state now reads "No payments match the current filters." when any
+  filter is active. Verified chips activate/filter (all demo payments are same-day so 7/30/All all
+  show 7). Only frontend/src/pages/Overview.jsx changed.
+
