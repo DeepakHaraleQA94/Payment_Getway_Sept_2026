@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from "recharts";
@@ -29,7 +29,8 @@ export default function Overview() {
   const [summary, setSummary] = useState(null);
   const [statusData, setStatusData] = useState([]);
   const [payments, setPayments] = useState([]);
-  const [railByCurrency, setRailByCurrency] = useState({});
+  const [allPayments, setAllPayments] = useState([]);
+  const [succeededOnly, setSucceededOnly] = useState(false);
   const tenant = tenants.find((t) => t.id === selectedTenantId);
   const currency = tenant?.default_currency || "USD";
 
@@ -44,17 +45,23 @@ export default function Overview() {
     setSummary(s.data);
     setStatusData(r.data);
     setPayments(pay.data.slice(0, 6));
-    const byCcy = {};
-    (pay.data || []).forEach((x) => {
-      const ccy = (x.currency || "USD").toUpperCase();
-      const m = String((x.metadata && x.metadata.method) || (x.provider_key === "demo_upi" ? "upi" : "card")).toLowerCase();
-      const rail = m.includes("upi") ? "upi" : "card";
-      if (!byCcy[ccy]) byCcy[ccy] = { upi: { count: 0, amount: 0 }, card: { count: 0, amount: 0 } };
-      byCcy[ccy][rail].count += 1;
-      byCcy[ccy][rail].amount += x.amount_minor || 0;
-    });
-    setRailByCurrency(byCcy);
+    setAllPayments(pay.data || []);
   }, [selectedTenantId]);
+
+  const railByCurrency = useMemo(() => {
+    const byCcy = {};
+    allPayments
+      .filter((x) => !succeededOnly || ["succeeded", "captured"].includes(x.status))
+      .forEach((x) => {
+        const ccy = (x.currency || "USD").toUpperCase();
+        const m = String((x.metadata && x.metadata.method) || (x.provider_key === "demo_upi" ? "upi" : "card")).toLowerCase();
+        const rail = m.includes("upi") ? "upi" : "card";
+        if (!byCcy[ccy]) byCcy[ccy] = { upi: { count: 0, amount: 0 }, card: { count: 0, amount: 0 } };
+        byCcy[ccy][rail].count += 1;
+        byCcy[ccy][rail].amount += x.amount_minor || 0;
+      });
+    return byCcy;
+  }, [allPayments, succeededOnly]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -82,10 +89,23 @@ export default function Overview() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-heading text-lg font-medium">Payment Mix by Rail</h3>
-                <span className="text-xs font-mono text-muted-foreground">{grandTotal} payments</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    data-testid="rail-mix-succeeded-toggle"
+                    onClick={() => setSucceededOnly((v) => !v)}
+                    className={`text-xs font-mono px-2.5 py-1 rounded-md border transition-colors ${
+                      succeededOnly
+                        ? "bg-primary/20 border-primary/60 text-primary"
+                        : "bg-secondary/40 border-border text-muted-foreground hover:border-primary/40"
+                    }`}>
+                    Succeeded only
+                  </button>
+                  <span className="text-xs font-mono text-muted-foreground">{grandTotal} payments</span>
+                </div>
               </div>
               {currencies.length === 0 ? (
-                <EmptyState message="No payments yet to break down by rail." testid="rail-mix-empty" />
+                <EmptyState message={succeededOnly ? "No succeeded payments to break down by rail." : "No payments yet to break down by rail."} testid="rail-mix-empty" />
               ) : (
                 <div className="space-y-5">
                   {currencies.map((ccy) => {

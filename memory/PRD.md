@@ -1069,3 +1069,10 @@ Split payouts by rail (UPI vs Card) in the settlement + reconciliation exports.
   Verified: INR block UPI 100% ₹2,328.50 (6) / Card ₹0.00; USD block Card 100% $50.00 (1).
   Only frontend/src/pages/Overview.jsx changed.
 
+## Rail Mix Succeeded-Only Toggle (2026-06, FRONTEND-ONLY, additive)
+- Overview.jsx rail mix moved to a useMemo over the full payments list (allPayments) with a
+  "Succeeded only" toggle (rail-mix-succeeded-toggle) that filters to status in
+  {succeeded, captured} so pending/failed/refunded don't skew the rails picture. Filter-aware empty
+  state. Verified: ALL = 7 payments (INR 6 + USD 1); Succeeded only = 6 payments (USD refunded row
+  dropped, INR block remains). Only frontend/src/pages/Overview.jsx changed.
+
