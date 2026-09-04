@@ -901,3 +901,27 @@ only; live stays disabled; emails still mocked; no provider-specific logic in co
   30-40 item test matrix. These are additive and can be layered on this foundation without core changes.
 - Infra note: another sandbox pod reset occurred mid-task (supervisor+postgres down, cloudpay db wiped);
   recovered (recreated role/db, migrations to b7d4e1a9c260, reseeded, login 200).
+
+
+## Provider Connect Wizard (2026-06, FRONTEND-ONLY, additive)
+- Replaced the simple "Add Provider" dialog in frontend/src/pages/Providers.jsx with a guided 7-step
+  wizard that wraps the EXISTING provider APIs — no new backend models, secret store, or health
+  architecture (per user constraint). Steps: 1) Select Provider (cards from GET /api/providers/available
+  with env chips), 2) Environment (from plugin supported_environments), 3) Credentials (dynamic inputs
+  from required_credentials; Next gated until required creds filled; "no credentials" note otherwise),
+  4) Capabilities (toggle chips to narrow currencies/countries/methods/flows — empty = inherit plugin
+  default; + display name & priority), 5) Acceptance Mapping (DISPLAY-ONLY per user: lists eligible UPI
+  acceptance accounts via GET /api/payment-acceptance/accounts for UPI providers, not-applicable note
+  otherwise; nothing persisted), 6) Test Connection (GET /api/providers/{key}/health?environment= with
+  healthy/error result), 7) Review & Save (summary -> POST /api/providers).
+- Left step rail with active/done indicators; Back preserves selections. Header button renamed to
+  "Connect Provider" (data-testid=connect-provider-button). All steps/controls have data-testids
+  (wizard-*, wizard-provider-{key}, wizard-environment-{env}, wizard-credential-{key},
+  wizard-currency/method/flow/country-*, wizard-run-health, wizard-health-result, wizard-review,
+  wizard-next, wizard-back, wizard-save).
+- Save posts supported_methods from the chosen payment_methods; only non-empty credentials sent
+  (encrypted server-side, never echoed). Duplicate provider+mode returns backend 400 (expected).
+- ONLY file changed: frontend/src/pages/Providers.jsx. No backend/DB/engine change.
+- Tests: testing_agent iteration_27 — frontend 100% (all 10 criteria: open, 7-step rail, provider
+  cards, Next gating, env/creds/capabilities/acceptance/test/review, mock e2e save creates account +
+  grid refresh + success toast, Back preserves state). No bugs. Configured-providers grid unchanged.
