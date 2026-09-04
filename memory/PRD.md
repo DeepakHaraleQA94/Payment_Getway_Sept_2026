@@ -996,3 +996,23 @@ Three additive frontend enhancements; no backend/DB/engine change.
   (uptime 1/1 -> 2/2 on click, presets set 1/99/1500 + working link, filter All/UPI/Card with counts
   + matching row badges + empty state). No issues.
 
+
+## Method Filter Everywhere + Uptime History Sparkline (2026-06, additive)
+Two additive enhancements; backend change limited to surfacing refund provider_key.
+- Method Filter on Refunds + Hosted Checkout: same UPI/Card chip pattern as Payments.
+  * Refunds.jsx: refund-method-filter chips (refund-filter-all/-upi/-card with counts), a Method
+    column badge (refund-method-{id8}), filtered list + per-method empty states. Method derived as
+    demo_upi->upi else card from the NEW refund.provider_key.
+  * Checkout.jsx: checkout-method-filter chips (checkout-filter-all/-upi/-card), filteredSessions,
+    method empty states; reuses the existing Method column (checkout-method-badge-{reference}).
+  * Backend: RefundOut gained optional provider_key; payments.list_refunds now JOINs Payment to
+    populate it per refund (tenant-scoped, limit 200). No new endpoint/migration.
+- Uptime History sparkline: Providers.jsx checkCardHealth keeps history[] (last 16 up/down); each
+  card's uptime line renders provider-uptime-spark-{id} — green (tall)/red (short) bars per recent
+  check — next to the % and ups/checks. Session-scoped (resets on reload); grows via the 15s
+  auto-refresh + click re-checks, capped at 16 bars.
+- Files: backend app/schemas/__init__.py, app/routers/payments.py; frontend Refunds.jsx, Checkout.jsx,
+  Providers.jsx. Tests: testing_agent iteration_31 — backend 100% (2/2, refunds provider_key present),
+  frontend 100% (18/18: both filters with counts/empty states + matching row badges, sparkline appends
+  bars on re-check and caps at 16). No issues.
+

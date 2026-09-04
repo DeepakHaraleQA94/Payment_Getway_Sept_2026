@@ -88,9 +88,17 @@ async def refund_payment(payment_id: uuid.UUID, body: RefundCreate, db: AsyncSes
 async def list_refunds(tenant_id: str | None = None, db: AsyncSession = Depends(get_db),
                        user=Depends(get_current_user)):
     tid = resolve_tenant_id(user, tenant_id)
-    res = await db.execute(select(Refund).where(Refund.tenant_id == tid)
-                           .order_by(Refund.created_at.desc()).limit(200))
-    return res.scalars().all()
+    res = await db.execute(
+        select(Refund, Payment.provider_key)
+        .join(Payment, Payment.id == Refund.payment_id)
+        .where(Refund.tenant_id == tid)
+        .order_by(Refund.created_at.desc()).limit(200))
+    out = []
+    for refund, provider_key in res.all():
+        ro = RefundOut.model_validate(refund)
+        ro.provider_key = provider_key
+        out.append(ro)
+    return out
 
 
 @router.post("/{payment_id}/reverse", response_model=ReversalOut)

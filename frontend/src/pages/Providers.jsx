@@ -82,13 +82,15 @@ export default function Providers() {
       setCardHealth((h) => {
         const prev = h[p.id] || {};
         return { ...h, [p.id]: { loading: false, status: res.data.status, at: Date.now(),
-          checks: (prev.checks || 0) + 1, ups: (prev.ups || 0) + (up ? 1 : 0) } };
+          checks: (prev.checks || 0) + 1, ups: (prev.ups || 0) + (up ? 1 : 0),
+          history: [...(prev.history || []), up].slice(-16) } };
       });
     } catch (e) {
       setCardHealth((h) => {
         const prev = h[p.id] || {};
         return { ...h, [p.id]: { loading: false, status: "error", at: Date.now(),
-          checks: (prev.checks || 0) + 1, ups: (prev.ups || 0) } };
+          checks: (prev.checks || 0) + 1, ups: (prev.ups || 0),
+          history: [...(prev.history || []), false].slice(-16) } };
       });
     }
   }, []);
@@ -645,9 +647,16 @@ export default function Providers() {
                 const pct = Math.round((h.ups / h.checks) * 100);
                 const good = pct >= 99;
                 return (
-                  <div className="mt-2 flex items-center justify-end gap-1.5 text-[11px] font-mono"
+                  <div className="mt-2 flex items-center justify-end gap-2 text-[11px] font-mono"
                     data-testid={`provider-uptime-${p.id}`}>
-                    <span className="text-muted-foreground">uptime (session)</span>
+                    <div className="flex items-end gap-0.5 h-4" data-testid={`provider-uptime-spark-${p.id}`} title="Recent health checks">
+                      {(h.history || []).map((ok, i) => (
+                        <span key={i}
+                          className={`w-1 rounded-sm ${ok ? "bg-emerald-400/80" : "bg-red-400/80"}`}
+                          style={{ height: ok ? "100%" : "45%" }} />
+                      ))}
+                    </div>
+                    <span className="text-muted-foreground">uptime</span>
                     <span className={good ? "text-emerald-400" : pct >= 90 ? "text-amber-400" : "text-red-400"}>
                       {pct}%
                     </span>

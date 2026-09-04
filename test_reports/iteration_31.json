@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 31 — validated the three additive enhancements: (1) Refunds Method Filter, (2) Hosted Checkout Method Filter, (3) Provider Uptime sparkline. All backend and frontend tests passed (18/18 UI + 2/2 API).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_method_filter_sparkline.py",
+    "/app/test_reports/pytest/iter31.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Providers.jsx: the 15s setInterval re-check will grow the uptime history unbounded (capped by slice(-16), so OK visually). Sparkline count and 'X/Y' will also drift over long sessions — expected per spec (SESSION-scoped, resets on reload).",
+    "Refunds provider_key resolution in payments router uses a JOIN Payment for each refund — currently returned via a single SELECT + zip, which is fine for scale; keep the ORM eager select for future N+1 protection if list_refunds ever loads related refund objects individually.",
+    "MethodBadge derivation is a client-side heuristic (provider_key === 'demo_upi' ? UPI : Card). If a future UPI provider (e.g. razorpay-upi) is added, the badge will misclassify — consider centralising method inference on the backend or via payment_method field."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter31_method_filter_sparkline.py (new)"
+  ],
+  "success_rate": { "backend": "100% (2/2)", "frontend": "100% (18/18)" },
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (Super Admin) — tested against tenant 'CapTest 3b91058e' (default active tenant post-login).",
+  "seed_data_creation": "None. Reused existing seed: CapTest 3b91058e has demo_upi + mock, 6 UPI payments, 1 CARD refund (RFTEST-1 / mock).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login: use data-testid=email-input/password-input/auth-submit-button; use `page.expect_navigation()` context manager around click (network idle wait after click times out). Super Admin lands on /superadmin, but direct nav to /dashboard/* works. CapTest 3b91058e is the default active tenant in the topbar. VERIFIED — Refunds: chip labels 'All' / 'UPI 0' / 'Card 1'; All shows 1 row (Card badge, refund abc4cc6a, $50 test refund on RFTEST-1); UPI filter -> refunds-empty 'No UPI refunds.'; Card filter -> 1 row all-CARD. Checkout on same tenant: 9 sessions total, UPI filter=8 rows, Card filter=1 row. Providers sparkline: initial bar=1 after auto-check; clicking provider-health-badge-{id} appends new green bar and increments 'X/X' text; verified cap at exactly 16 bars after 22 clicks. Beware selector prefix collisions: '[data-testid^=\"refund-method-\"]' also matches 'refund-method-filter' — scope selectors with '[data-testid^=\"refund-row-\"] [data-testid^=\"refund-method-\"]'. Payment method filter regression: still works.",
+  "rca of the issue": "N/A — all features working as specified."
+}

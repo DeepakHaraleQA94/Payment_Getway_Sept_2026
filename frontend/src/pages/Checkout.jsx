@@ -25,8 +25,11 @@ export default function Checkout() {
   const [busy, setBusy] = useState(false);
   const [accent, setAccent] = useState("#3B82F6");
   const [logoUrl, setLogoUrl] = useState(null);
+  const [methodFilter, setMethodFilter] = useState("all");
   const fileRef = useRef(null);
   const tenant = tenants.find((t) => t.id === selectedTenantId);
+  const sessionMethod = (s) => (s.provider_key === "demo_upi" ? "upi" : "card");
+  const filteredSessions = methodFilter === "all" ? sessions : sessions.filter((s) => sessionMethod(s) === methodFilter);
 
   useEffect(() => {
     if (tenant) {
@@ -185,9 +188,25 @@ export default function Checkout() {
           </div>
         </div>
       </Panel>
+      <div className="flex items-center gap-2 mb-4" data-testid="checkout-method-filter">
+        {[["all", "All"], ["upi", "UPI"], ["card", "Card"]].map(([key, label]) => (
+          <button key={key} type="button" data-testid={`checkout-filter-${key}`}
+            onClick={() => setMethodFilter(key)}
+            className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
+              methodFilter === key
+                ? "bg-primary/20 border-primary/60 text-primary"
+                : "bg-secondary/40 border-border text-muted-foreground hover:border-primary/40"
+            }`}>
+            {label}
+            {key !== "all" && (
+              <span className="ml-1.5 opacity-70">{sessions.filter((s) => sessionMethod(s) === key).length}</span>
+            )}
+          </button>
+        ))}
+      </div>
       <Panel className="p-0 overflow-hidden">
-        {sessions.length === 0 ? (
-          <EmptyState message="No checkout sessions yet." testid="checkout-empty" />
+        {filteredSessions.length === 0 ? (
+          <EmptyState message={methodFilter === "all" ? "No checkout sessions yet." : `No ${methodFilter.toUpperCase()} checkouts.`} testid="checkout-empty" />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -203,7 +222,7 @@ export default function Checkout() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sessions.map((s) => (
+                {filteredSessions.map((s) => (
                   <TableRow key={s.id} data-testid={`checkout-row-${s.reference}`}>
                     <TableCell className="font-mono text-xs">{s.reference}</TableCell>
                     <TableCell><MethodBadge method={s.provider_key === "demo_upi" ? "upi" : "card"} testid={`checkout-method-badge-${s.reference}`} /></TableCell>

@@ -261,6 +261,7 @@ class RefundOut(ORMBase):
     status: str
     reason: str | None
     created_at: datetime
+    provider_key: str | None = None
 
 
 # ---- Reversals ----
