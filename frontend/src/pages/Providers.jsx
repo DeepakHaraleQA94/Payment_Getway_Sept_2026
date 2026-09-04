@@ -78,9 +78,18 @@ export default function Providers() {
     setCardHealth((h) => ({ ...h, [p.id]: { ...(h[p.id] || {}), loading: true } }));
     try {
       const res = await api.get(`/providers/${p.provider_key}/health`, { params: { environment: p.mode } });
-      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: res.data.status, at: Date.now() } }));
+      const up = res.data.status === "up";
+      setCardHealth((h) => {
+        const prev = h[p.id] || {};
+        return { ...h, [p.id]: { loading: false, status: res.data.status, at: Date.now(),
+          checks: (prev.checks || 0) + 1, ups: (prev.ups || 0) + (up ? 1 : 0) } };
+      });
     } catch (e) {
-      setCardHealth((h) => ({ ...h, [p.id]: { loading: false, status: "error", at: Date.now() } }));
+      setCardHealth((h) => {
+        const prev = h[p.id] || {};
+        return { ...h, [p.id]: { loading: false, status: "error", at: Date.now(),
+          checks: (prev.checks || 0) + 1, ups: (prev.ups || 0) } };
+      });
     }
   }, []);
 
@@ -547,6 +556,19 @@ export default function Providers() {
                 <Label>Amount (INR)</Label>
                 <Input data-testid="demo-link-amount" type="number" step="0.01" value={demoAmount}
                   onChange={(e) => setDemoAmount(e.target.value)} placeholder="1500" />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {["1", "99", "1500"].map((amt) => (
+                    <button key={amt} type="button" data-testid={`demo-link-preset-${amt}`}
+                      onClick={() => setDemoAmount(amt)}
+                      className={`text-xs font-mono px-2.5 py-1 rounded-md border transition-colors ${
+                        demoAmount === amt
+                          ? "bg-primary/20 border-primary/60 text-primary"
+                          : "bg-secondary/40 border-border text-muted-foreground hover:border-primary/40"
+                      }`}>
+                      ₹{amt}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
@@ -617,6 +639,22 @@ export default function Providers() {
                   );
                 })()}
               </div>
+              {(() => {
+                const h = cardHealth[p.id];
+                if (!h || !h.checks) return null;
+                const pct = Math.round((h.ups / h.checks) * 100);
+                const good = pct >= 99;
+                return (
+                  <div className="mt-2 flex items-center justify-end gap-1.5 text-[11px] font-mono"
+                    data-testid={`provider-uptime-${p.id}`}>
+                    <span className="text-muted-foreground">uptime (session)</span>
+                    <span className={good ? "text-emerald-400" : pct >= 90 ? "text-amber-400" : "text-red-400"}>
+                      {pct}%
+                    </span>
+                    <span className="text-muted-foreground">· {h.ups}/{h.checks}</span>
+                  </div>
+                );
+              })()}
               <div className="mt-3 flex items-center justify-between text-xs">
                 <StatusBadge status={p.enabled ? "active" : "suspended"} />
                 <span className="font-mono text-muted-foreground">ENV: {p.mode.toUpperCase()} · P{p.priority}</span>

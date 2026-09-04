@@ -1,0 +1,50 @@
+{
+  "summary": "Frontend-only regression for iteration 30 (Provider Uptime %, Demo Amount Presets, Method Filter). All three additive UI features verified end-to-end via Playwright against the production preview URL as Super Admin.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Uptime counter is session-scoped (in-memory cardHealth state) and resets on remount/reload — expected per spec, but users may find '100% · 1/1' misleading right after login; consider labeling it 'this session' more prominently (currently already shown as 'uptime (session)').",
+    "Demo-link dialog does not gate 'Generate demo link' on amount>0 explicitly (input has min=1); acceptable, but consider preventing zero/negative.",
+    "Payments table filter counts are computed client-side from currently loaded rows only — if pagination is added later, counts may become misleading."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (Super Admin)",
+  "seed_data_creation": "Added a demo_upi (Sandbox) provider account to tenant 'Acme Commerce' during the Demo-link dialog test. If future tests need a tenant WITHOUT demo_upi to reach the wizard's demo-link dialog, disable/delete the demo_upi account on Acme or use a fresh tenant.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Provider Uptime %: On /dashboard/providers, provider-uptime-{id} shows 'uptime (session)100%· 1/1' after first check and increments to 2/2 upon clicking provider-health-badge-{id}. Verified on both CapTest 3b91058e (demo_upi + mock) and Acme Commerce (mock only, then demo_upi added). Method Filter on /dashboard/payments: payment-method-filter shows chips payment-filter-all, payment-filter-upi (with count 6), payment-filter-card (with count 0); UPI filter shows 6 UPI rows, Card filter shows 'No CARD payments.' empty state, All restores 6 rows; all row badges match active filter. Demo Presets: opened wizard on Acme, selected wizard-provider-demo_upi, clicked through steps, wizard-save shows toast 'Provider account connected' and opens demo-link-dialog. Chips demo-link-preset-1/99/1500 correctly set demo-link-amount to 1/99/1500 respectively; demo-link-generate creates working /checkout/{token} URL.",
+  "detailed_verification": {
+    "provider_uptime": {
+      "cards_with_uptime": 2,
+      "initial_text": "uptime (session)100%· 1/1",
+      "after_badge_click": "uptime (session)100%· 2/2",
+      "auto_refresh_interval_s": 15,
+      "status": "PASS"
+    },
+    "method_filter": {
+      "filter_bar_present": true,
+      "chip_labels": {"all": "All", "upi": "UPI6", "card": "Card0"},
+      "all_rows": 6,
+      "upi_rows": 6,
+      "card_rows_empty_state": "No CARD payments.",
+      "row_badges_match_filter": true,
+      "status": "PASS"
+    },
+    "demo_presets": {
+      "wizard_save_opens_dialog": true,
+      "preset_1_sets_amount": "1",
+      "preset_99_sets_amount": "99",
+      "preset_1500_sets_amount": "1500",
+      "generate_link_url_pattern": "https://<host>/checkout/<token>",
+      "status": "PASS"
+    },
+    "regression_notes": "Payments table rendered 6 rows with Reference/Method/Provider Txn/Amount/Fee/Net/Risk/Status/Details/Refund columns — unchanged. Providers cards still show Healthy badge (click-to-recheck confirmed via counter increment). Non-demo provider (mock) was previously connected on Acme without a demo-link dialog — regression maintained."
+  }
+}

@@ -979,3 +979,20 @@ Four additive frontend enhancements; no backend/DB/engine change (reuse existing
   dialog + working link, method badges on both tables, 15s auto-refresh observed, QR PNG download
   (verified filename), demo UPI PIN/QR success regressions. No issues.
 
+
+## Provider Uptime % + Demo Amount Presets + Method Filter (2026-06, FRONTEND-ONLY, additive)
+Three additive frontend enhancements; no backend/DB/engine change.
+- Provider Uptime %: Providers.jsx checkCardHealth now accumulates session checks/ups counters in
+  cardHealth[p.id]; each card shows a session uptime line (provider-uptime-{id}) "uptime (session) N%
+  · ups/checks" under the health badge (green >=99, amber >=90, red below). Session-scoped (resets on
+  reload), driven by the existing 15s auto-refresh + click re-checks.
+- Demo Amount Presets: the wizard's post-save Demo-link dialog gets quick chips
+  (demo-link-preset-1 / -99 / -1500) that set demo-link-amount for faster sales demos.
+- Method Filter: Payments.jsx adds a filter bar (payment-method-filter) with chips
+  payment-filter-all / -upi / -card (UPI/Card show live counts); paymentMethod(p) derives upi vs card
+  from p.metadata.method (fallback demo_upi->upi else card); filteredPayments drives the table with a
+  method-specific empty state.
+- Files: pages/Providers.jsx, pages/Payments.jsx. Tests: testing_agent iteration_30 — frontend 100%
+  (uptime 1/1 -> 2/2 on click, presets set 1/99/1500 + working link, filter All/UPI/Card with counts
+  + matching row badges + empty state). No issues.
+

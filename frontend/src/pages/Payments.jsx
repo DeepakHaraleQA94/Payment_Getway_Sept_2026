@@ -59,6 +59,13 @@ export default function Payments() {
   const [refundAmount, setRefundAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [resendBusy, setResendBusy] = useState(false);
+  const [methodFilter, setMethodFilter] = useState("all");
+
+  const paymentMethod = (p) => {
+    const m = String((p.metadata && p.metadata.method) || (p.provider_key === "demo_upi" ? "upi" : "card")).toLowerCase();
+    return m.includes("upi") ? "upi" : "card";
+  };
+  const filteredPayments = methodFilter === "all" ? payments : payments.filter((p) => paymentMethod(p) === methodFilter);
 
   const resendReceipt = async (p) => {
     setResendBusy(true);
@@ -354,9 +361,26 @@ export default function Payments() {
         }
       />
 
+      <div className="flex items-center gap-2 mb-4" data-testid="payment-method-filter">
+        {[["all", "All"], ["upi", "UPI"], ["card", "Card"]].map(([key, label]) => (
+          <button key={key} type="button" data-testid={`payment-filter-${key}`}
+            onClick={() => setMethodFilter(key)}
+            className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
+              methodFilter === key
+                ? "bg-primary/20 border-primary/60 text-primary"
+                : "bg-secondary/40 border-border text-muted-foreground hover:border-primary/40"
+            }`}>
+            {label}
+            {key !== "all" && (
+              <span className="ml-1.5 opacity-70">{payments.filter((p) => paymentMethod(p) === key).length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
       <Panel className="p-0 overflow-hidden">
-        {payments.length === 0 ? (
-          <EmptyState message="No payments yet. Create your first sandbox payment." testid="payments-empty" />
+        {filteredPayments.length === 0 ? (
+          <EmptyState message={methodFilter === "all" ? "No payments yet. Create your first sandbox payment." : `No ${methodFilter.toUpperCase()} payments.`} testid="payments-empty" />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -374,7 +398,7 @@ export default function Payments() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {payments.map((p) => (
+                {filteredPayments.map((p) => (
                   <TableRow key={p.id} data-testid={`payment-row-${p.reference}`}>
                     <TableCell className="font-mono text-xs">{p.reference}</TableCell>
                     <TableCell>
