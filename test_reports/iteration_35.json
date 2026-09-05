@@ -1,0 +1,73 @@
+{
+  "summary": "Iter35 – Razorpay ISOLATED PSP plugin verification. Added test_iter35_razorpay.py with 26 tests (25 passed, 1 real functional failure: cumulative refund cap not enforced). Re-ran iter32/33/34 regression: iter32=24/24 PASS, iter33/34 failures are pre-existing environment/seed regressions from the DB reset (missing acme sandbox UPI acceptance account, missing captest tenant) — NOT caused by the razorpay plugin. Confirmed (1) no razorpay-specific code leaked into engine/registry/wizard/webhook core, and (2) LIVE httpx path exercised via mocks only – no real network calls.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/payments/{id}/refunds",
+        "issue": "Cumulative refund cap NOT enforced for razorpay (and likely any plugin whose refund adapter returns status='refunded'). create_refund() aggregates prior refunds with 'Refund.status == \"succeeded\"' filter, but RazorpayProvider.refund() sets ProviderResult.status='refunded' -> Refund row is persisted with status='refunded', so 'already' is always 0. Test: partial 5000 then over-refund 20000 on a 20000 razorpay card payment succeeded (should be 400). File/line: app/services/payment_engine.py:259-263.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_razorpay.py",
+    "/app/test_reports/pytest/iter35_razorpay.xml",
+    "/app/test_reports/pytest/iter323334_regression.xml"
+  ],
+  "iter35_pass_fail_matrix": {
+    "PLUGIN_CONTRACT_DISCOVERY": "PASS (test_razorpay_in_available)",
+    "TEST_CONNECTION_sandbox_up": "PASS",
+    "TEST_CONNECTION_live_missing_creds_invalid_credentials_lists_key_id_key_secret_webhook_secret": "PASS",
+    "TEST_CONNECTION_live_with_all_creds_up": "PASS",
+    "TEST_CONNECTION_no_secret_echoed": "PASS",
+    "TEST_CONNECTION_provider_manage_required": "PASS (unauth -> 401/403)",
+    "SANDBOX_card_DIRECT_synchronous_succeeded_1_credit_method_flow_persist": "PASS",
+    "SANDBOX_UPI_async_pending_then_valid_HMAC_webhook_succeeded_exactly_1_credit_eq_net": "PASS (amount 30011, tail 11, method=upi persisted)",
+    "WEBHOOK_duplicate_returns_already_no_second_credit": "PASS",
+    "WEBHOOK_bad_signature_returns_400_invalid_webhook_payload_or_signature": "PASS",
+    "UPI_INTENT_generation_no_external_call": "PASS (returns order_sim_* + client_token)",
+    "UPI_QR_generation_upi_scheme_payload": "PASS (upi://pay?pa=razorpay@sim...)",
+    "REFUND_full_status_refunded": "PASS",
+    "REFUND_partial_and_over_refund_cap": "FAIL – over-refund NOT rejected (see backend_issues.critical)",
+    "STATUS_endpoint_generic_normalized": "PASS (post-fix using generic /providers/razorpay/status/{ptxn})",
+    "RECONCILE_endpoint_generic": "PASS",
+    "HEALTH_sandbox_up_live_up_foo_unsupported": "PASS",
+    "LIVE_SAFETY_no_account_400": "PASS",
+    "LIVE_SAFETY_account_without_credentials_400": "PASS",
+    "CAPABILITY_JPY_currency_400": "PASS",
+    "NO_SECRET_LEAKAGE_create_provider_credentials_ref_only": "PASS (marker never appears in create/get responses or DB config)",
+    "NO_CORE_LEAKAGE_grep_engine_registry_router_no_razorpay_branches": "PASS",
+    "LIVE_httpx_path_mocked_calls_orders_endpoint_basic_auth_never_falls_back": "PASS (no real network)",
+    "LIVE_httpx_path_missing_creds_raises_ProviderError": "PASS"
+  },
+  "regression_iter32_33_34": {
+    "iter32": "24/24 PASS",
+    "iter33": "16/18 PASS, 2 FAIL — both are TestTenantIsolation ops-cannot-read (captest_id fixture falls back to platform tenant since CapTest tenant was removed during DB reset; NOT razorpay-related).",
+    "iter34": "17/25 collected — 4 ERRORS (TestAcceptanceMapping: 'acme should have a sandbox UPI acceptance account seeded' — no seed rows exist in payment_acceptance_accounts for acme after reset; NOT razorpay-related) + 1 FAIL (TestPermissionIsolation same captest fallback issue) + 20 PASS.",
+    "conclusion": "All regression FAILs/ERRORs are traceable to the acknowledged tenant/seed reset (captest tenant gone, no acme sandbox UPI acceptance account seeded). None are caused by registering RazorpayProvider."
+  },
+  "isolation_confirmations": {
+    "no_razorpay_code_in_core": "Verified by TestNoCoreLeakage.test_no_razorpay_in_core_engine (grep of payment_engine.py, registry.py, config.py) — no 'provider_key == \"razorpay\"' or similar branches. Registry.py contains ONLY register(RazorpayProvider()).",
+    "live_path_never_hit_real_network": "TestLivePathMocked patches httpx.request; confirmed create_payment LIVE branch calls POST https://api.razorpay.com/v1/orders with Basic auth (key_id, key_secret) and returns pending — no fallback to sandbox on failure. test_live_missing_creds_raises_ProviderError confirms hard fail (never silent-sandbox)."
+  },
+  "action_items": [
+    "FIX (payment_engine.create_refund): normalize the cumulative-refunded aggregation to also count Refund.status in ('succeeded','refunded','partially_refunded'), OR normalize RazorpayProvider.refund() to return ProviderResult.status='succeeded'. As-is, razorpay refunds bypass the cumulative cap.",
+    "SEED (env, pre-existing): re-seed acme.payment_acceptance_accounts (sandbox UPI) or update iter34's TestAcceptanceMapping fixture to create the account inline. This unblocks 4 ERRORs.",
+    "TESTS (env, pre-existing): iter33/iter34 tenant-isolation tests reference the now-removed 'captest' tenant and silently fall back to 'platform' (a tenant the ops user belongs to), turning 403 checks into 200. Update fixtures to create a second non-platform tenant or skip when unavailable."
+  ],
+  "critical_code_review_comments": [
+    "Refund status normalization inconsistency across plugins: RazorpayProvider.refund returns status='refunded' in sandbox and _status.to_cloudpay_status('processed')='refunded' in live; MockProvider returns 'succeeded'. The core aggregation in create_refund only counts 'succeeded' -> over-refund is possible for razorpay. Either the plugin contract should mandate a single terminal status (e.g. 'succeeded') OR the aggregation must be status-agnostic.",
+    "razorpay_provider.verify_callback pops '_webhook_secret' from body before HMAC check (test hook). Good – but if a genuine razorpay live webhook ever contained a '_webhook_secret' key it would be silently stripped. Consider gating this to non-live only, or renaming the hook to a more collision-safe key.",
+    "razorpay_provider.RazorpayStatusMapper maps 'processed' -> 'refunded'. That matches razorpay's refund lifecycle, but the same mapper is used for payment.status too; a payment reaching status 'processed' would be treated as 'refunded'. Consider separate maps for payment vs refund status.",
+    "razorpay_provider._RazorpayApiClient.request has no retry/backoff; single-shot 30s timeout. Fine for phase-2 but future consideration."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter35_razorpay.py"],
+  "success_rate": {"backend": "iter35: 25/26 (96%); regression iter32/33/34: 60/70 (86%, all failures pre-existing env/seed)", "frontend": "n/a"},
+  "test_credentials": "finance@vortexglobal.info / CloudPay-DutqTuzcS1jL64hHJrCy (super admin, platform tenant). Acme tenant used for razorpay payments.",
+  "seed_data_creation": "None; all TEST_RZP_* / TEST Razorpay* rows cleaned up in module teardown.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter35 razorpay plugin is functionally correct except for the cumulative refund cap bug (payment_engine.create_refund vs RazorpayProvider.refund status='refunded'). Regression suites iter33/iter34 need env fixes: (a) seed a payment_acceptance_accounts row for acme (sandbox UPI, enabled=true) and (b) update captest_id fixture to create/use a real non-platform second tenant. Iter32 is fully green. LIVE razorpay was NOT called with real network (mocked via httpx.request patching)."
+}

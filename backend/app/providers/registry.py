@@ -8,6 +8,7 @@ from app.providers.base import PaymentProviderAdapter
 from app.providers.example_provider import ExampleExternalProvider
 from app.providers.demo_upi import DemoUpiProvider
 from app.providers.mock import MockProvider
+from app.providers.razorpay_provider import RazorpayProvider
 from app.providers.stripe_provider import StripeProvider
 
 _REGISTRY: dict[str, PaymentProviderAdapter] = {}
@@ -41,6 +42,9 @@ register(ExampleExternalProvider())
 # Stripe: an ISOLATED real-PSP adapter (SANDBOX/TEST only; live disabled). Talks to Stripe's real
 # test API via the SDK, entirely behind the generic contract — the core payment engine is untouched.
 register(StripeProvider())
+# Razorpay: ISOLATED real-PSP plugin (UPI intent/QR + cards, HMAC webhooks, refund/capture).
+# SANDBOX = deterministic simulation; LIVE = real Razorpay REST API when credentials are supplied.
+register(RazorpayProvider())
 # Demo UPI: ISOLATED sandbox-only plugin for the development UPI journey (INR intent/QR + demo
 # app choices). Reuses the generic contract; live mode is rejected by capability checks.
 register(DemoUpiProvider())

@@ -1176,3 +1176,32 @@ Made the Provider Connect Wizard fully plugin-agnostic end-to-end; reused all ex
 - Tests: iteration_34 — 67/67 PASS (25 new generic-onboarding + 42 regression re-run, no defects).
   New file /app/backend/tests/test_iter34_provider_connect.py.
 
+## Real Provider Plugin — Razorpay (Phase 2, iteration_35, 2026-06)
+Implemented the Razorpay PSP as an ISOLATED PaymentProviderAdapter — no core changes to the engine,
+registry, wizard, or webhook framework. Registered in app/providers/registry.py; auto-discovered by
+the generic wizard.
+- app/providers/razorpay_provider.py: RazorpayProvider. SANDBOX = deterministic simulation (no
+  network; _sim_outcome tail 13=failed/22=cancelled/11=created-pending/else captured). LIVE = real
+  Razorpay REST API (api.razorpay.com/v1, HTTP Basic auth via per-account key_id/key_secret resolved
+  from ProviderConfiguration; lazy httpx). Contract: create_payment, get_payment_status, capture,
+  refund, generate_intent (order), generate_qr (upi qr), verify_callback (HMAC-SHA256 hex of raw body
+  vs X-Razorpay-Signature; rejects mismatch), reconcile, health_check, test_connection. Capabilities:
+  methods [upi,card,netbanking,wallet]; flows direct/intent/qr; envs sandbox+live; refund+capture+
+  webhooks+intent+qr = true; VOID=false (Razorpay auto-refunds uncaptured auths). Credential metadata:
+  key_id, key_secret, webhook_secret (entered via wizard; never hard-coded).
+- UPI async path verified: create->pending; valid signed webhook -> succeeded + EXACTLY ONE ledger
+  credit (via Phase-1 ensure_success_credit); duplicate webhook -> already (no 2nd credit); bad
+  signature -> 400. Card DIRECT -> synchronous succeeded with payment_method='card' persisted.
+- BUG FOUND & FIXED (HIGH): plugin refund returned status 'refunded' but the core refund-cap query
+  counts Refund.status=='succeeded' (mock convention) -> cap bypassed. Fixed IN THE PLUGIN: refund()
+  now returns status 'succeeded' for a completed refund (no core change). Verified: partial 5000 ok,
+  over-refund 20000 -> 400, remaining 15000 ok.
+- LIVE safety: live razorpay with no account/credentials rejected (400); JPY/unsupported rejected;
+  never falls back to sandbox. No razorpay-specific code leaked into core; LIVE httpx path tested via
+  mocks only (no real network / no credentials this phase).
+- Tests: iteration_35 — plugin suite 26/26 PASS (after the refund fix); iter32 core financial
+  regression 24/24 PASS. NOTE: some iter33/iter34 cases now fail ONLY due to the mid-session Postgres
+  cluster reset removing seed data those tests assumed (old CapTest tenant / an acme sandbox
+  acceptance account) — environmental, not functional regressions from this plugin.
+  File /app/backend/tests/test_iter35_razorpay.py.
+
