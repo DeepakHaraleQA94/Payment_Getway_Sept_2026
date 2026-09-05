@@ -72,18 +72,27 @@ async def seed(db: AsyncSession) -> None:
     else:
         super_role.permissions = all_perms
 
-    # Platform admin user
+    # Platform admin user. The canonical Super Admin email (settings.admin_email) is preserved.
+    # An empty/missing ADMIN_PASSWORD must NEVER create or overwrite a password (prevents blanking a
+    # valid credential when the runtime secret is absent).
+    admin_pw = (settings.admin_password or "").strip()
     res = await db.execute(select(User).where(User.email == settings.admin_email))
     admin = res.scalar_one_or_none()
     if admin is None:
+        if not admin_pw:
+            raise RuntimeError(
+                "ADMIN_PASSWORD must be set to seed the initial Super Admin (refusing to create a "
+                "blank-password account).")
         admin = User(email=settings.admin_email, name="Platform Admin",
-                     password_hash=hash_password(settings.admin_password), tenant_id=platform.id,
+                     password_hash=hash_password(admin_pw), tenant_id=platform.id,
                      role_id=super_role.id, is_superadmin=True, auth_provider="password", status="active",
                      email_verified=True)
         db.add(admin)
     else:
-        if not admin.password_hash or not verify_password(settings.admin_password, admin.password_hash):
-            admin.password_hash = hash_password(settings.admin_password)
+        # Only (re)set the password when an explicit non-empty ADMIN_PASSWORD is supplied AND it
+        # differs from the stored one. Never overwrite a valid existing password with a blank.
+        if admin_pw and (not admin.password_hash or not verify_password(admin_pw, admin.password_hash)):
+            admin.password_hash = hash_password(admin_pw)
         admin.is_superadmin = True
         admin.role_id = super_role.id
         admin.email_verified = True
@@ -103,9 +112,9 @@ async def seed(db: AsyncSession) -> None:
     # Demo Platform Admin (Level 2): on platform tenant, NOT a super admin, only granted perms.
     res = await db.execute(select(User).where(User.email == "ops-admin@cloudpay.io"))
     ops_admin = res.scalar_one_or_none()
-    if ops_admin is None:
+    if ops_admin is None and admin_pw:
         ops_admin = User(email="ops-admin@cloudpay.io", name="Ops Admin",
-                         password_hash=hash_password(settings.admin_password), tenant_id=platform.id,
+                         password_hash=hash_password(admin_pw), tenant_id=platform.id,
                          role_id=ops_role.id, is_superadmin=False, auth_provider="password",
                          status="active", email_verified=True)
         db.add(ops_admin)

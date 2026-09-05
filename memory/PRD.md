@@ -1205,3 +1205,19 @@ the generic wizard.
   acceptance account) — environmental, not functional regressions from this plugin.
   File /app/backend/tests/test_iter35_razorpay.py.
 
+## Super Admin Login Failure — Root-Cause Fix (iteration_36, 2026-06)
+- Root cause: the pod's Postgres cluster/role dropped (recurring infra issue), so /api/auth/login
+  returned 500 with null detail; the frontend's formatApiError renders exactly "Something went wrong.
+  Please try again." when detail is null. Backend/frontend auth code and the Super Admin record were
+  all healthy.
+- Fix (minimal): (1) recovered the DB — restarted postgresql, recreated the cloudpay role/password,
+  alembic upgrade head, reseeded (login now 200); (2) hardened app/seed.py so an empty/missing
+  ADMIN_PASSWORD can NEVER create or overwrite a valid Super Admin password (admin_pw stripped;
+  refuses to create a blank-password admin; only (re)sets when a non-empty ADMIN_PASSWORD differs;
+  ops-admin only created when admin_pw non-empty). Canonical email finance@vortexglobal.info
+  unchanged; is_superadmin/role/platform association/password preserved.
+- Verified by testing_agent iteration_36: 100% — backend 8/8 + iter32 auth 5/5; frontend login ->
+  /superadmin redirect, /auth/me is_superadmin=true, wrong-pw 401, ops-admin blocked, tenant
+  isolation, logout revokes session, password NOT rotated across restarts. No app code modified
+  except the seed hardening. File /app/backend/tests/test_iter36_login_recovery.py.
+
